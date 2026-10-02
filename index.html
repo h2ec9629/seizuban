@@ -42,6 +42,7 @@ button,.btn,select{font:inherit;font-size:13px;color:var(--ink);background:var(-
 button:hover,.btn:hover{border-color:var(--muted)}
 button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--sel);outline-offset:1px}
 .tool svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6}
+.tool:disabled{opacity:.3;cursor:not-allowed}
 .tool[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .tool kbd{font-family:var(--mono);font-size:10px;opacity:.55}
 .stage{grid-area:stage;position:relative;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--paper);min-height:0}
@@ -144,6 +145,8 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
       <button id="undo" title="元に戻す (Ctrl+Z)">↶ 戻す</button>
       <button id="redo" title="やり直し (Ctrl+Y)">↷</button>
       <button id="fit" title="全体表示 (F)">全体</button>
+      <select id="vwSel" title="見る向き（正面・側面では箱の位置と高さを直接いじれます）" aria-label="見る向き">
+        <option value="top">向き：平面（上から）</option><option value="front">向き：正面</option><option value="right">向き：右側面</option><option value="back">向き：背面</option><option value="left">向き：左側面</option></select>
       <button id="sixBtn" title="6面図：高さを入れた図形を上下・前後・左右から見る">6面</button>
       <button id="tSide" class="tool" aria-pressed="true" title="右の数値パネルを出す／しまう">パネル</button>
       <details class="file" id="fileMenu">
@@ -281,6 +284,8 @@ const HINTS={
 };
 let docName='';
 let shapes=[], nextId=1, sel=null, tool='select';
+let VW='top', REAL=null, topUndo=null, sideStart=null;   // 向き切替：正面・側面では shapes が「箱」の仮図形になり、REAL が本物
+const realS=()=>VW==='top'?shapes:REAL;
 let view={s:1,ox:0,oy:0}, W=0, H=0, dpr=1;
 const opt={labels:true,grid:10,snapGrid:true,snapObj:true,ortho:false};
 const sticky={shift:false,ctrl:false,alt:false};let M={shift:false,ctrl:false,alt:false},lastTap={t:0,x:0,y:0};
@@ -298,9 +303,9 @@ const clone=o=>JSON.parse(JSON.stringify(o));
 function readColors(){const cs=getComputedStyle(document.documentElement);
   ['paper','ink','muted','grid','grid-major','axis','accent','sel','block'].forEach(k=>C[k]=cs.getPropertyValue('--'+k).trim());}
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2600);}
-function store(){try{localStorage.setItem(KEY,JSON.stringify({shapes,nextId,name:docName}))}catch(e){}}
+function store(){try{localStorage.setItem(KEY,JSON.stringify({shapes:realS(),nextId,name:docName}))}catch(e){}}
 function saveUndo(){undoS.push(JSON.stringify(shapes));if(undoS.length>200)undoS.shift();redoS=[];}
-function commit(){store();renderPanel();draw();}
+function commit(){if(VW!=='top')writeBack();store();renderPanel();draw();}
 
 /* ---------- geometry ---------- */
 function build(type,p1,p2){
@@ -460,7 +465,8 @@ function drawShape(s,col,selected){
   if(s.type==='line'){const a=toS(s.x1,s.y1),b=toS(s.x2,s.y2);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke();}
   else if(s.type==='rect'){const a=toS(s.x,s.y+s.h);const w=s.w*view.s,h=s.h*view.s;
     if(s.rad>0)drawPath(outline(s),true,!!s.label);
-    else{if(s.label){ctx.fillStyle=C.block;ctx.fillRect(a[0],a[1],w,h);}ctx.strokeRect(a[0],a[1],w,h);}
+    else{if(s.pv){ctx.fillStyle=C.paper;ctx.fillRect(a[0],a[1],w,h);}if(s.label){ctx.fillStyle=C.block;ctx.fillRect(a[0],a[1],w,h);}ctx.fillStyle=col;ctx.strokeRect(a[0],a[1],w,h);
+      if(s.cyl){ctx.save();ctx.lineWidth=1;ctx.setLineDash([8,3,2,3]);ctx.beginPath();ctx.moveTo(a[0]+w/2,a[1]-6);ctx.lineTo(a[0]+w/2,a[1]+h+6);ctx.stroke();ctx.restore();}}
     if(s.label){ctx.fillStyle=col;ctx.font=`600 13px ${ff}`;ctx.textAlign='center';ctx.textBaseline='middle';
       const c=toS(s.x+s.w/2,s.y+s.h/2);ctx.fillText(s.label,c[0],c[1]-(h>40?8:0));
       if(h>40){ctx.font=`11px ${getComputedStyle(document.documentElement).getPropertyValue('--mono')}`;ctx.fillStyle=C.muted;ctx.fillText(`${fmt(s.w)}×${fmt(s.h)}`,c[0],c[1]+9);}}}
@@ -498,7 +504,9 @@ function draw(){
   if(!W)return;
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle=C.paper;ctx.fillRect(0,0,W,H);
   drawGrid();
-  if(bg&&bg.vis&&bgImg.complete&&bgImg.naturalWidth){const c=toS(bg.x+bg.w/2,bg.y+bg.h/2),w=bg.w*view.s,h=bg.h*view.s;ctx.save();ctx.globalAlpha=bg.op;ctx.translate(c[0],c[1]);ctx.rotate(-(bg.rot||0)*Math.PI/180);ctx.drawImage(bgImg,-w/2,-h/2,w,h);ctx.restore();}
+  if(VW!=='top'){const z=toS(0,0)[1];ctx.save();ctx.strokeStyle=C.accent;ctx.globalAlpha=.7;ctx.lineWidth=1.5;ctx.setLineDash([10,4,2,4]);ctx.beginPath();ctx.moveTo(0,z);ctx.lineTo(W,z);ctx.stroke();ctx.restore();
+    ctx.save();ctx.font=`600 12px ${MONO}`;ctx.fillStyle=C.accent;ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText('床（高さ0）',8,z-4);ctx.restore();}
+  if(VW==='top'&&bg&&bg.vis&&bgImg.complete&&bgImg.naturalWidth){const c=toS(bg.x+bg.w/2,bg.y+bg.h/2),w=bg.w*view.s,h=bg.h*view.s;ctx.save();ctx.globalAlpha=bg.op;ctx.translate(c[0],c[1]);ctx.rotate(-(bg.rot||0)*Math.PI/180);ctx.drawImage(bgImg,-w/2,-h/2,w,h);ctx.restore();}
   const dim=shapes.some(s=>s.id===sel);ctx.globalAlpha=dim?.45:1;
   for(const s of shapes)if(s.id!==sel)drawShape(s,C.ink,false);
   ctx.globalAlpha=1;
@@ -540,7 +548,7 @@ function draw(){
 
 /* ---------- panel ---------- */
 /* 6面図用：四角・円・閉じた形に「立体の高さ」と「床からの高さ」を持たせる */
-function fieldsFor(s){const f=fieldsFor0(s)||[];
+function fieldsFor(s){if(VW!=='top'&&s.type==='rect')return sideFields(s);const f=fieldsFor0(s)||[];
   if(s.type==='rect'||s.type==='circle'||s.type==='poly')f.push(
     {k:'tz',l:'立体の高さ（6面図用）',get:()=>s.tz||0,set:v=>s.tz=Math.abs(v)},
     {k:'z0',l:'床からの高さ（浮き）',get:()=>s.z0||0,set:v=>s.z0=v});
@@ -578,6 +586,7 @@ function renderPanel(focusText){
   }
   stopDemo();
   const fs=fieldsFor(s);
+  queueMicrotask(()=>{if(VW!=='top')side.querySelectorAll('#toPoly,#rotL,#rotR').forEach(b=>b.hidden=true);});
   side.innerHTML=`<h2><span class="tag">${s.type.toUpperCase()}</span>${NAMES[s.type]}${s.grp?`<span class="tag" style="color:var(--sel);border-color:var(--sel)">GROUP ${shapes.filter(x=>x.grp===s.grp).length}個</span>`:''}</h2><div class="fields${s.type==='poly'?' three':''}">${fs.map(f=>
     `<label class="${f.wide?'wide':''}">${f.l}<input id="f-${f.k}" ${f.text?'type="text"':'type="number" step="any" inputmode="decimal"'} ${f.ro?'readonly tabindex="-1"':''} value="${f.text?String(f.get()).replace(/"/g,'&quot;'):r1(f.get())}"></label>`).join('')}</div>
     ${s.type==='poly'?'<p class="tips" style="padding:0;margin:10px 0 0">辺をダブルタップ=点を追加／点をダブルタップ=点を削除／Ctrl+辺ドラッグ=凸凹を押し出す／点を選んでShift+別の点→右クリックで円弧に</p>':''}
@@ -795,7 +804,7 @@ function ungroup(gid){saveUndo();shapes.forEach(x=>{if(x.grp===gid)delete x.grp;
 $('#grpGo').onclick=doGroup;
 
 /* ---------- tools ---------- */
-function setTool(t){tool=t;temp=null;document.querySelectorAll('.tool[data-tool]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.tool===t));$('#bgCal').setAttribute('aria-pressed',t==='calib');$('#bgMove').setAttribute('aria-pressed',t==='bgmove');$('#bgAuto').setAttribute('aria-pressed',t==='focus');$('#bgPersp').setAttribute('aria-pressed',t==='persp');if(t!=='union')unionSel.clear();$('#uniGo').hidden=t!=='union';if(t!=='group')grpSel.clear();if(t!=='cut')cutSel=[];$('#cutGo').hidden=t!=='cut';$('#grpGo').hidden=t!=='group';
+function setTool(t){if(VW!=='top'&&!SIDE_TOOLS.includes(t)){toast('正面・側面では「選択・四角・画面移動」だけ使えます。他は向きを平面に戻してください');return;}tool=t;temp=null;document.querySelectorAll('.tool[data-tool]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.tool===t));$('#bgCal').setAttribute('aria-pressed',t==='calib');$('#bgMove').setAttribute('aria-pressed',t==='bgmove');$('#bgAuto').setAttribute('aria-pressed',t==='focus');$('#bgPersp').setAttribute('aria-pressed',t==='persp');if(t!=='union')unionSel.clear();$('#uniGo').hidden=t!=='union';if(t!=='group')grpSel.clear();if(t!=='cut')cutSel=[];$('#cutGo').hidden=t!=='cut';$('#grpGo').hidden=t!=='group';
   if(!shapes.some(x=>x.id===sel))renderPanel();
   $('#hint').textContent=HINTS[t];cv.style.cursor=t==='pan'?'grab':t==='select'?'default':'crosshair';draw();}
 document.querySelectorAll('.tool').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
@@ -1079,9 +1088,9 @@ async function saveFile(ext,text,mime,desc,sfx=''){const name=`${baseName()}${sf
       toast(`${h.name} を保存しました`);$('#fileMenu').open=false;return;}
     catch(e){if(e.name==='AbortError')return;}}
   download(name,text,mime);}
-$('#saveJson').onclick=()=>saveFile('json',JSON.stringify({app:'kantan-cad',v:1,name:docName,nextId,shapes,bg},null,1),'application/json','製図板の図面');
+$('#saveJson').onclick=()=>saveFile('json',JSON.stringify({app:'kantan-cad',v:1,name:docName,nextId,shapes:realS(),bg},null,1),'application/json','製図板の図面');
 $('#openJson').onclick=()=>$('#fileIn').click();
-$('#fileIn').onchange=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();
+$('#fileIn').onchange=e=>{const f=e.target.files[0];if(!f)return;setView('top');const rd=new FileReader();
   rd.onload=()=>{try{const d=JSON.parse(rd.result);if(!Array.isArray(d.shapes))throw 0;saveUndo();docName=d.name||f.name.replace(/\.json$/i,'');$('#fname').value=docName;shapes=d.shapes;nextId=Math.max(d.nextId||0,...shapes.map(s=>s.id+1),1);sel=null;setBg(d.bg||null);commit();fit();toast(`${f.name} を開きました`);}
     catch(err){toast('開けませんでした。このアプリで保存した .json を選んでください');}};
   rd.readAsText(f);e.target.value='';$('#fileMenu').open=false;};
@@ -1146,6 +1155,46 @@ function makePDF(c){
   return new Blob(parts,{type:'application/pdf'});
 }
 $('#pdfDl').onclick=()=>{const c=renderDrawing();if(!c)return;saveFile('pdf',makePDF(c),'application/pdf','PDF図面');};
+/* ---------- 向き切替（正面・背面・左右側面で箱を直接編集） ----------
+   正面などに切り替えると、高さの入った図形を「箱」の仮図形にして shapes に入れ替える。
+   仮図形をいじるたびに writeBack で本物（REAL）の位置・幅・高さに書き戻す。 */
+const SIDE_TOOLS=['select','rect','pan'];
+const VIEWS={front:{ax:0,sg:1,dep:c=>c[1]},back:{ax:0,sg:-1,dep:c=>-c[1]},right:{ax:1,sg:1,dep:c=>-c[0]},left:{ax:1,sg:-1,dep:c=>c[0]}};
+function toProxies(){const V=VIEWS[VW];
+  return REAL.filter(isSolid).map(o=>{const bb=bbox([o]),a0=bb[V.ax],a1=bb[V.ax+2],c=[(bb[0]+bb[2])/2,(bb[1]+bb[3])/2];
+    const p={id:o.id,type:'rect',pv:1,x:V.sg>0?a0:-a1,y:o.z0||0,w:a1-a0,h:o.tz,label:o.label||o.name||''};
+    if(o.type==='circle')p.cyl=1;if(o.grp)p.grp=o.grp;return{d:V.dep(c),p};}).sort((a,b)=>b.d-a.d).map(e=>e.p);}
+function writeBack(){const V=VIEWS[VW],ax=V.ax,P=new Map(shapes.map(p=>[p.id,p])),R=[];
+  const rng=p=>V.sg>0?[p.x,p.x+p.w]:[-(p.x+p.w),-p.x];
+  for(const o of REAL){if(!isSolid(o)){R.push(o);continue;}const p=P.get(o.id);if(!p)continue;P.delete(o.id);
+    const[n0,n1]=rng(p),bb=bbox([o]),a0=bb[ax],a1=bb[ax+2];
+    if(Math.abs(n0-a0)>1e-6||Math.abs(n1-a1)>1e-6){
+      if(o.type==='rect'){if(ax===0){o.x=n0;o.w=n1-n0;}else{o.y=n0;o.h=n1-n0;}}
+      else if(o.type==='circle'){const c=(n0+n1)/2;if(ax===0)o.cx=c;else o.cy=c;o.r=(n1-n0)/2;}
+      else if(o.type==='poly'){const k=a1-a0>1e-9?(n1-n0)/(a1-a0):1;o.pts=o.pts.map(q=>{const r=q.slice();r[ax]=n0+(q[ax]-a0)*k;return r;});}}
+    o.z0=p.y;o.tz=Math.abs(p.h);
+    if(p.label!==(o.label||o.name||'')){if(o.type==='rect')o.label=p.label;else if(p.label)o.name=p.label;else delete o.name;}
+    if(p.grp)o.grp=p.grp;else delete o.grp;R.push(o);}
+  // 正面・側面で新しく描いた（複製した）箱：奥行は幅と同じにして図の真ん中あたりに置く
+  const b=bbox(REAL)||[0,0,0,0],oa=1-ax,cen=(b[oa]+b[oa+2])/2;
+  for(const p of P.values()){if(p.type!=='rect')continue;p.pv=1;const[n0,n1]=rng(p),d=p.w,o={id:p.id,type:'rect',label:p.label||'',tz:Math.abs(p.h),z0:p.y};
+    if(ax===0){o.x=n0;o.w=n1-n0;o.y=cen-d/2;o.h=d;}else{o.y=n0;o.h=n1-n0;o.x=cen-d/2;o.w=d;}if(p.grp)o.grp=p.grp;R.push(o);}
+  REAL=R;}
+function sideFields(s){const V=VIEWS[VW],X=V.ax===0;
+  return[{k:'label',l:'名前（設備名など）',text:1,wide:1,get:()=>s.label,set:v=>s.label=v},
+    {k:'x',l:X?'X 位置（左下基準）':'Y 位置（左下基準）',get:()=>V.sg>0?s.x:-(s.x+s.w),set:v=>s.x=V.sg>0?v:-(v+s.w)},
+    {k:'w',l:X?'幅（X方向）':'奥行（Y方向）',get:()=>s.w,set:v=>{const r=V.sg<0?s.x+s.w:0;s.w=Math.abs(v)||1;if(V.sg<0)s.x=r-s.w;}},
+    {k:'y',l:'床からの高さ（浮き）',get:()=>s.y,set:v=>s.y=v},
+    {k:'h',l:'立体の高さ',get:()=>s.h,set:v=>s.h=Math.abs(v)||1}];}
+function setView(v){if(v===VW)return;temp=null;
+  if(VW!=='top'){writeBack();shapes=REAL;REAL=null;undoS=topUndo||[];redoS=[];VW='top';const now=JSON.stringify(shapes);if(sideStart&&sideStart!==now)undoS.push(sideStart);}
+  if(v!=='top'){topUndo=undoS;sideStart=JSON.stringify(shapes);REAL=shapes;VW=v;shapes=toProxies();undoS=[];redoS=[];if(!SIDE_TOOLS.includes(tool))setTool('select');}
+  if(!shapes.some(s=>s.id===sel))sel=null;$('#vwSel').value=VW;
+  document.querySelectorAll('.tool[data-tool]').forEach(b=>b.disabled=VW!=='top'&&!SIDE_TOOLS.includes(b.dataset.tool));
+  renderPanel();fit();
+  if(VW!=='top')toast(shapes.length?'箱をドラッグで移動、角や辺で幅・高さを変えられます':'「立体の高さ」が入った図形がありません。ここで四角を描くと箱として追加されます');}
+$('#vwSel').onchange=e=>setView(e.target.value);
+
 /* ---------- 6面図（第三角法） ---------- */
 const isSolid=s=>(s.type==='rect'||s.type==='circle'||s.type==='poly')&&(s.tz||0)>0;
 function mirY(s){const c=clone(s);switch(c.type){   // 上下反転（底面図用）。文字は読める向きのまま
@@ -1154,8 +1203,8 @@ function mirY(s){const c=clone(s);switch(c.type){   // 上下反転（底面図�
   case'poly':c.pts=c.pts.map(p=>[p[0],-p[1]]);if(c.bul)c.bul=c.bul.map(v=>-v);break;
   case'arc':c.y1=-c.y1;c.y2=-c.y2;c.ym=-c.ym;break;case'text':c.y=-c.y-c.size;break;}return c;}
 function render6(){
-  const b=bbox();if(!b){toast('図が空です');return null;}
-  const sol=shapes.filter(isSolid),X0=b[0],X1=b[2],Y0=b[1],Y1=b[3],XS=Math.max(X1-X0,1),YS=Math.max(Y1-Y0,1);
+  const RS=realS(),b=bbox(RS);if(!b){toast('図が空です');return null;}
+  const sol=RS.filter(isSolid),X0=b[0],X1=b[2],Y0=b[1],Y1=b[3],XS=Math.max(X1-X0,1),YS=Math.max(Y1-Y0,1);
   let Z0=0,Z1=0;sol.forEach(s=>{Z0=Math.min(Z0,s.z0||0);Z1=Math.max(Z1,(s.z0||0)+s.tz);});
   if(Z1-Z0<=0)Z1=Z0+Math.max(XS,YS)*.15;const ZS=Z1-Z0;
   const gap=60,pad=30,tl=24,T=1800,D=2;
@@ -1172,7 +1221,7 @@ function render6(){
     const ttl=(t,x,y)=>{ctx.fillStyle=C.accent;ctx.font=`700 14px ${ff}`;ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText(t,x,y-8);};
     // 平面図（表）＝今の図そのまま
     ttl('平面図（表）',CX(1),CY(0));view={s:k,ox:CX(1)-X0*k,oy:CY(0)+rh[0]+Y0*k};
-    for(const s of shapes)drawShape(s,C.ink,false);if(opt.labels)drawLabels();
+    for(const s of RS)drawShape(s,C.ink,false);if(opt.labels)drawLabels(RS);
     // 底面図（裏）＝高さのある図形を下から見る
     ttl('底面図（裏）',CX(1),CY(2));view={s:k,ox:CX(1)-X0*k,oy:CY(2)+rh[2]-Y1*k};
     for(const s of sol)drawShape(mirY(s),C.ink,false);
@@ -1205,7 +1254,7 @@ $('#dxfCopy').onclick=()=>{const t=toDXF();$('#fileMenu').open=false;
   const fallback=()=>{sel=null;renderPanel();side.insertAdjacentHTML('beforeend',`<textarea id="dxfTa" readonly aria-label="DXFテキスト"></textarea>`);const ta=$('#dxfTa');ta.value=t;ta.focus();ta.select();toast('下の欄を全選択してコピーしてください');};
   try{navigator.clipboard.writeText(t).then(()=>toast('DXFをコピーしました。メモ帳に貼って .dxf で保存すればOK'),fallback);}catch(e){fallback();}};
 const clr=$('#clearAll');clr.onclick=()=>{if(!clr.dataset.arm){clr.dataset.arm=1;clr.textContent='本当に全部消す？もう一度押す';setTimeout(()=>{delete clr.dataset.arm;clr.textContent='新規（全部消す）';},3000);return;}
-  delete clr.dataset.arm;clr.textContent='新規（全部消す）';saveUndo();docName='';$('#fname').value='';shapes=[];sel=null;commit();$('#fileMenu').open=false;toast('白紙にしました（戻すで復活できます）');};
+  delete clr.dataset.arm;clr.textContent='新規（全部消す）';setView('top');saveUndo();docName='';$('#fname').value='';shapes=[];sel=null;commit();$('#fileMenu').open=false;toast('白紙にしました（戻すで復活できます）');};
 
 /* ---------- sample & init ---------- */
 function sample(){let i=1;const S=o=>({id:i++,...o});
