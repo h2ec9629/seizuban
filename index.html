@@ -572,6 +572,7 @@ function fieldsFor(s){if(VW!=='top'&&s.type==='rect')return sideFields(s);const 
     {k:'tz',l:'立体の高さ（6面図用）',get:()=>s.tz||0,set:v=>s.tz=Math.abs(v)},
     {k:'z0',l:'床からの高さ（浮き）',get:()=>s.z0||0,set:v=>s.z0=v},
     {k:'tp',l:'てっぺんの縮み %（0=まっすぐ／100=とがる）',wide:1,get:()=>s.tp||0,set:v=>s.tp=Math.max(0,Math.min(100,v))});
+  if((s.type==='circle'||(s.type==='poly'&&s.closed)))f.push({k:'hole',l:'3Dで穴にする（1=中の立体に貫通穴をあける）',wide:1,get:()=>s.hole?1:0,set:v=>{if(v)s.hole=1;else delete s.hole;}});
   return f;}
 function fieldsFor0(s){
   const n=(k,l)=>({k,l,get:()=>s[k],set:v=>s[k]=v});
@@ -1281,7 +1282,9 @@ function setView(v){if(v===VW)return;temp=null;
 $('#vwSel').onchange=e=>setView(e.target.value);
 
 /* ---------- 6面図（第三角法） ---------- */
-const isSolid=s=>(s.type==='rect'||s.type==='circle'||s.type==='poly')&&(s.tz||0)>0;
+const isSolid=s=>!s.hole&&(s.type==='rect'||s.type==='circle'||s.type==='poly')&&(s.tz||0)>0;
+const isHole=s=>!!s.hole&&(s.type==='circle'||(s.type==='poly'&&s.closed));
+const pip=(p,R)=>{let c=false;for(let i=0,j=R.length-1;i<R.length;j=i++){const a=R[i],b=R[j];if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])c=!c;}return c;};
 function mirY(s){const c=clone(s);switch(c.type){   // 上下反転（底面図用）。文字は読める向きのまま
   case'line':case'dim':c.y1=-c.y1;c.y2=-c.y2;if(c.type==='dim')c.off=-c.off;break;
   case'rect':c.y=-(c.y+c.h);break;case'circle':c.cy=-c.cy;break;
@@ -1309,7 +1312,7 @@ function render6(){
     for(const s of RS)drawShape(s,C.ink,false);if(opt.labels)drawLabels(RS);
     // 底面図（裏）＝高さのある図形を下から見る
     ttl('底面図（裏）',CX(1),CY(2));view={s:k,ox:CX(1)-X0*k,oy:CY(2)+rh[2]-Y1*k};
-    for(const s of sol)drawShape(mirY(s),C.ink,false);
+    for(const s of [...sol,...RS.filter(isHole)])drawShape(mirY(s),C.ink,false);
     // 側面4つ：u=横位置、d=手前からの距離（遠い物から描いて手前で隠す）
     const sides=[['左側面図',0,bb=>[Y1-bb[3],Y1-bb[1]],bb=>bb[0]],['正面図',1,bb=>[bb[0]-X0,bb[2]-X0],bb=>bb[1]],
                  ['右側面図',2,bb=>[bb[1]-Y0,bb[3]-Y0],bb=>-bb[2]],['背面図',3,bb=>[X1-bb[2],X1-bb[0]],bb=>-bb[3]]];
@@ -1349,14 +1352,20 @@ function ring3(s){let P;
 function newell(P){let x=0,y=0,z=0;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];x+=(a[1]-b[1])*(a[2]+b[2]);y+=(a[2]-b[2])*(a[0]+b[0]);z+=(a[0]-b[0])*(a[1]+b[1]);}
   const l=Math.hypot(x,y,z)||1;return[x/l,y/l,z/l];}
 function build3(){const RS=realS(),F=[],L=[],T=[];let n=0;
+  const HOLES=RS.filter(isHole).map(ring3).filter(r=>r.length>2);
   for(const s of RS){
+    if(isHole(s))continue;
     if(isSolid(s)){const B=ring3(s),m=B.length;if(m<2)continue;
       const bb=bbox([s]),cx=(bb[0]+bb[2])/2,cy=(bb[1]+bb[3])/2,f=1-(s.tp||0)/100,z0=s.z0||0,z1=z0+s.tz,nm=s.label||s.name||'';
       const Tp=B.map(p=>[cx+(p[0]-cx)*f,cy+(p[1]-cy)*f]),col=nm?PAL[n++%PAL.length]:'#cfd6dc',closed=s.type!=='poly'||s.closed;
       const sharp=B.map((p,i)=>{if(!closed&&(i===0||i===m-1))return true;const a=B[(i-1+m)%m],c=B[(i+1)%m],u=[p[0]-a[0],p[1]-a[1]],v=[c[0]-p[0],c[1]-p[1]];
         const cs=(u[0]*v[0]+u[1]*v[1])/((Math.hypot(...u)*Math.hypot(...v))||1);return cs<Math.cos(Math.PI/12);});
       for(let i=0;i<(closed?m:m-1);i++){const j=(i+1)%m;F.push({p:[[...B[i],z0],[...B[j],z0],[...Tp[j],z1],[...Tp[i],z1]],c:col,ed:[1,sharp[j],1,sharp[i]]});}
-      if(closed){F.push({p:B.map(p=>[...p,z0]),c:col});if(f>0)F.push({p:Tp.map(p=>[...p,z1]),c:col});}
+      const HS=closed?HOLES.filter(h=>pip([h.reduce((t,q)=>t+q[0],0)/h.length,h.reduce((t,q)=>t+q[1],0)/h.length],B)):[];
+      if(closed){F.push({p:B.map(p=>[...p,z0]),c:col,h:HS.map(h=>h.map(p=>[...p,z0]))});if(f>0)F.push({p:Tp.map(p=>[...p,z1]),c:col,h:HS.map(h=>h.map(p=>[...p,z1]))});}
+      for(const h of HS){const k=h.length,hc=[h.reduce((t,q)=>t+q[0],0)/k,h.reduce((t,q)=>t+q[1],0)/k];
+        const sh=h.map((p,i)=>{const a=h[(i-1+k)%k],c=h[(i+1)%k],u=[p[0]-a[0],p[1]-a[1]],v=[c[0]-p[0],c[1]-p[1]];return(u[0]*v[0]+u[1]*v[1])/((Math.hypot(...u)*Math.hypot(...v))||1)<Math.cos(Math.PI/12);});
+        for(let i=0;i<k;i++){const j=(i+1)%k;F.push({p:[[...h[i],z0],[...h[j],z0],[...h[j],z1],[...h[i],z1]],c:col,ed:[1,sh[j],1,sh[i]],cull:hc});}}
       if(nm)T.push({p:[cx,cy,z1],t:nm});}
     else{let P=null,cl=false;
       if(s.type==='line')P=[[s.x1,s.y1],[s.x2,s.y2]];
@@ -1365,7 +1374,8 @@ function build3(){const RS=realS(),F=[],L=[],T=[];let n=0;
       else if(s.type==='arc')P=sampleEl(arcEl(s));
       if(P)L.push({p:P.map(q=>[q[0],q[1],0]),cl});
       if(s.type==='rect'&&s.label)T.push({p:[s.x+s.w/2,s.y+s.h/2,0],t:s.label,fl:1});}}
-  F.forEach(f=>f.n=newell(f.p));
+  F.forEach(f=>{f.n=newell(f.p);if(f.cull){const mx=f.p.reduce((t,q)=>t+q[0],0)/f.p.length,my=f.p.reduce((t,q)=>t+q[1],0)/f.p.length;
+    if(f.n[0]*(f.cull[0]-mx)+f.n[1]*(f.cull[1]-my)<0)f.n=f.n.map(v=>-v);}});
   const mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity];
   for(const q of[...F.flatMap(f=>f.p),...L.flatMap(l=>l.p)])for(let k=0;k<3;k++){mn[k]=Math.min(mn[k],q[k]);mx[k]=Math.max(mx[k],q[k]);}
   if(mn[0]===Infinity)return null;mn[2]=Math.min(mn[2],0);
@@ -1382,12 +1392,14 @@ function draw3(){if(!v3)return;const{g,W,H,m}=v3,a=v3.yaw*Math.PI/180,e=v3.pit*M
   g.strokeStyle='#7d8a94';g.lineWidth=1.2;
   for(const l of m.L){g.beginPath();l.p.forEach((q,i)=>{const s=P(q);i?g.lineTo(s[0],s[1]):g.moveTo(s[0],s[1]);});if(l.cl)g.closePath();g.stroke();}
   // 面：遠い順
-  const fs=m.F.map(f=>{const S=f.p.map(P);return{f,S,d:S.reduce((t,q)=>t+q[2],0)/S.length};}).sort((x,y)=>y.d-x.d);
+  const EV=[-ce*sa,-ce*ca,se];
+  const fs=m.F.filter(f=>!f.cull||(f.n[0]*EV[0]+f.n[1]*EV[1]+f.n[2]*EV[2]>0)).map(f=>{const S=f.p.map(P);return{f,S,d:S.reduce((t,q)=>t+q[2],0)/S.length};}).sort((x,y)=>y.d-x.d);
   for(const{f,S}of fs){const k=.5+.55*Math.abs(f.n[0]*LIG[0]+f.n[1]*LIG[1]+f.n[2]*LIG[2]),fc=shade(f.c,k);
-    g.beginPath();S.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.closePath();g.fillStyle=fc;g.fill();g.strokeStyle=fc;g.lineWidth=.8;g.stroke();
+    const HP=(f.h||[]).map(r=>r.map(P)),ring=(R)=>{R.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.closePath();};
+    g.beginPath();ring(S);HP.forEach(ring);g.fillStyle=fc;g.fill('evenodd');g.strokeStyle=fc;g.lineWidth=.8;g.stroke();
     g.strokeStyle=shade(f.c,.5);g.lineWidth=1.1;g.beginPath();
     if(f.ed){for(let i=0;i<4;i++)if(f.ed[i]){const p0=S[i],p1=S[(i+1)%4];g.moveTo(p0[0],p0[1]);g.lineTo(p1[0],p1[1]);}}
-    else{S.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.closePath();}g.stroke();}
+    else{ring(S);HP.forEach(ring);}g.stroke();}
   // 名前
   const ff=getComputedStyle(document.body).fontFamily;g.textAlign='center';g.textBaseline='bottom';
   for(const t of m.T){const s=P(t.p);g.font=t.fl?`500 11px ${ff}`:`700 13px ${ff}`;g.lineWidth=3;g.strokeStyle='rgba(255,255,255,.9)';g.strokeText(t.t,s[0],s[1]-4);g.fillStyle=t.fl?'#5b6770':'#1b2329';g.fillText(t.t,s[0],s[1]-4);}}
