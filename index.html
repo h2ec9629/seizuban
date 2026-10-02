@@ -147,6 +147,7 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
       <button id="fit" title="全体表示 (F)">全体</button>
       <select id="vwSel" title="見る向き（正面・側面では箱の位置と高さを直接いじれます）" aria-label="見る向き">
         <option value="top">向き：平面（上から）</option><option value="front">向き：正面</option><option value="right">向き：右側面</option><option value="back">向き：背面</option><option value="left">向き：左側面</option></select>
+      <button id="v3Btn" title="3Dで見る（見るだけ。高さを入れた図形が立体になります）">3D</button>
       <button id="sixBtn" title="6面図：高さを入れた図形を上下・前後・左右から見る">6面</button>
       <button id="tSide" class="tool" aria-pressed="true" title="右の数値パネルを出す／しまう">パネル</button>
       <details class="file" id="fileMenu">
@@ -204,6 +205,11 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
   </footer>
 </div>
 <div class="toast" id="toast" hidden></div>
+<div class="dlg-back" id="v3" hidden><div class="dlg" style="width:min(1200px,100%)"><h3>3Dで見る（ドラッグで回転・ホイール／ピンチで拡大・ダブルクリックで元の向き）</h3>
+  <canvas id="v3Cv" style="height:min(68vh,720px);border:1px solid var(--line);border-radius:6px;background:#f4f6f7;cursor:grab"></canvas>
+  <p class="tips" style="padding:0;margin:8px 0 0" id="v3Info"></p>
+  <div class="row"><button type="button" data-v3="iso">斜め</button><button type="button" data-v3="front">正面</button><button type="button" data-v3="right">右</button><button type="button" data-v3="back">背面</button><button type="button" data-v3="left">左</button><button type="button" data-v3="top">真上</button>
+  <button type="button" id="v3Png">PNGで保存</button><button type="button" id="v3Close" class="primary">閉じる</button></div></div></div>
 <div class="dlg-back" id="six" hidden><div class="dlg" style="width:min(1100px,100%)"><h3>6面図（第三角法：上=平面／中段 左・正面・右・背面／下=底面）</h3>
   <canvas id="sixCv" style="height:auto;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:default"></canvas>
   <p class="tips" style="padding:0;margin:8px 0 0" id="sixInfo"></p>
@@ -551,7 +557,8 @@ function draw(){
 function fieldsFor(s){if(VW!=='top'&&s.type==='rect')return sideFields(s);const f=fieldsFor0(s)||[];
   if(s.type==='rect'||s.type==='circle'||s.type==='poly')f.push(
     {k:'tz',l:'立体の高さ（6面図用）',get:()=>s.tz||0,set:v=>s.tz=Math.abs(v)},
-    {k:'z0',l:'床からの高さ（浮き）',get:()=>s.z0||0,set:v=>s.z0=v});
+    {k:'z0',l:'床からの高さ（浮き）',get:()=>s.z0||0,set:v=>s.z0=v},
+    {k:'tp',l:'てっぺんの縮み %（0=まっすぐ／100=とがる）',wide:1,get:()=>s.tp||0,set:v=>s.tp=Math.max(0,Math.min(100,v))});
   return f;}
 function fieldsFor0(s){
   const n=(k,l)=>({k,l,get:()=>s[k],set:v=>s[k]=v});
@@ -1232,7 +1239,8 @@ function render6(){
       ctx.strokeStyle=C.muted;ctx.lineWidth=1;ctx.setLineDash([8,3,2,3]);ctx.beginPath();ctx.moveTo(x0-12,zy(0));ctx.lineTo(x0+cw[ci]+12,zy(0));ctx.stroke();ctx.setLineDash([]);
       const L=sol.map(s=>{const bb=bbox([s]);return{s,u:uf(bb),d:df(bb)};}).sort((a,c)=>c.d-a.d);
       for(const{s,u}of L){const rx=x0+u[0]*k,rw=(u[1]-u[0])*k,z0=s.z0||0,ry=zy(z0+s.tz),rhh=s.tz*k,nm=s.label||s.name||'';
-        ctx.fillStyle=nm?C.block:'#fff';ctx.fillRect(rx,ry,rw,rhh);ctx.strokeStyle=C.ink;ctx.lineWidth=1.5;ctx.strokeRect(rx,ry,rw,rhh);
+        const ti=rw*(s.tp||0)/200;ctx.beginPath();ctx.moveTo(rx,ry+rhh);ctx.lineTo(rx+rw,ry+rhh);ctx.lineTo(rx+rw-ti,ry);ctx.lineTo(rx+ti,ry);ctx.closePath();
+        ctx.fillStyle='#fff';ctx.fill();if(nm){ctx.fillStyle=C.block;ctx.fill();}ctx.strokeStyle=C.ink;ctx.lineWidth=1.5;ctx.stroke();
         if(s.type==='circle'){ctx.strokeStyle=C.muted;ctx.lineWidth=1;ctx.setLineDash([8,3,2,3]);ctx.beginPath();ctx.moveTo(rx+rw/2,ry-6);ctx.lineTo(rx+rw/2,ry+rhh+6);ctx.stroke();ctx.setLineDash([]);}
         ctx.textAlign='center';ctx.textBaseline='middle';const mx=rx+rw/2,my=ry+rhh/2,big=rhh>34;
         if(nm){ctx.font=`600 12px ${ff}`;if(ctx.measureText(nm).width<rw-4){ctx.fillStyle=C.ink;ctx.fillText(nm,mx,my-(big?7:0));}}
@@ -1249,6 +1257,83 @@ $('#sixBtn').onclick=openSix;$('#sixClose').onclick=closeSix;
 $('#six').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeSix();}});
 $('#sixPng').onclick=()=>six&&six.toBlob(bl=>bl&&saveFile('png',bl,'image/png','PNG画像','-6面図'),'image/png');
 $('#sixPdf').onclick=()=>six&&saveFile('pdf',makePDF(six),'application/pdf','PDF図面','-6面図');
+/* ---------- 3Dビュワー（見るだけ。外部部品なしの自前描画なのでオフラインでも動く） ----------
+   高さの入った図形を「平面の形を上に押し出した柱」にして、遠い面から順に塗り重ねて描く。
+   てっぺんの縮み% があれば上の面を中心に向かって小さくする（角すい・円すい）。 */
+const V3P={iso:[-35,28],front:[0,6],right:[-90,6],back:[180,6],left:[90,6],top:[0,89.9]};
+const PAL=['#7fa7c9','#d1a777','#8fc29a','#cf8f9b','#a99bd1','#c9c27f','#7fc4c2','#b0a69a'];
+let v3=null;
+function ring3(s){let P;
+  if(s.type==='circle'){P=[];for(let i=0;i<48;i++){const t=i/48*T2;P.push([s.cx+s.r*Math.cos(t),s.cy+s.r*Math.sin(t)]);}}
+  else P=pathPts(outline(s));
+  const Q=[];for(const p of P){const l=Q.at(-1);if(!l||Math.hypot(p[0]-l[0],p[1]-l[1])>1e-6)Q.push(p);}
+  if(Q.length>2&&Math.hypot(Q[0][0]-Q.at(-1)[0],Q[0][1]-Q.at(-1)[1])<1e-6)Q.pop();return Q;}
+function newell(P){let x=0,y=0,z=0;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];x+=(a[1]-b[1])*(a[2]+b[2]);y+=(a[2]-b[2])*(a[0]+b[0]);z+=(a[0]-b[0])*(a[1]+b[1]);}
+  const l=Math.hypot(x,y,z)||1;return[x/l,y/l,z/l];}
+function build3(){const RS=realS(),F=[],L=[],T=[];let n=0;
+  for(const s of RS){
+    if(isSolid(s)){const B=ring3(s),m=B.length;if(m<2)continue;
+      const bb=bbox([s]),cx=(bb[0]+bb[2])/2,cy=(bb[1]+bb[3])/2,f=1-(s.tp||0)/100,z0=s.z0||0,z1=z0+s.tz,nm=s.label||s.name||'';
+      const Tp=B.map(p=>[cx+(p[0]-cx)*f,cy+(p[1]-cy)*f]),col=nm?PAL[n++%PAL.length]:'#cfd6dc',closed=s.type!=='poly'||s.closed;
+      const sharp=B.map((p,i)=>{if(!closed&&(i===0||i===m-1))return true;const a=B[(i-1+m)%m],c=B[(i+1)%m],u=[p[0]-a[0],p[1]-a[1]],v=[c[0]-p[0],c[1]-p[1]];
+        const cs=(u[0]*v[0]+u[1]*v[1])/((Math.hypot(...u)*Math.hypot(...v))||1);return cs<Math.cos(Math.PI/12);});
+      for(let i=0;i<(closed?m:m-1);i++){const j=(i+1)%m;F.push({p:[[...B[i],z0],[...B[j],z0],[...Tp[j],z1],[...Tp[i],z1]],c:col,ed:[1,sharp[j],1,sharp[i]]});}
+      if(closed){F.push({p:B.map(p=>[...p,z0]),c:col});if(f>0)F.push({p:Tp.map(p=>[...p,z1]),c:col});}
+      if(nm)T.push({p:[cx,cy,z1],t:nm});}
+    else{let P=null,cl=false;
+      if(s.type==='line')P=[[s.x1,s.y1],[s.x2,s.y2]];
+      else if(s.type==='rect'||s.type==='poly'){P=pathPts(outline(s));cl=s.type==='rect'||s.closed;}
+      else if(s.type==='circle'){P=ring3(s);cl=true;}
+      else if(s.type==='arc')P=sampleEl(arcEl(s));
+      if(P)L.push({p:P.map(q=>[q[0],q[1],0]),cl});
+      if(s.type==='rect'&&s.label)T.push({p:[s.x+s.w/2,s.y+s.h/2,0],t:s.label,fl:1});}}
+  F.forEach(f=>f.n=newell(f.p));
+  const mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity];
+  for(const q of[...F.flatMap(f=>f.p),...L.flatMap(l=>l.p)])for(let k=0;k<3;k++){mn[k]=Math.min(mn[k],q[k]);mx[k]=Math.max(mx[k],q[k]);}
+  if(mn[0]===Infinity)return null;mn[2]=Math.min(mn[2],0);
+  return{F,L,T,mn,mx,c:mn.map((v,k)=>(v+mx[k])/2),R:Math.max(Math.hypot(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2])/2,1)};}
+const LIG=(()=>{const v=[-.4,-.6,.8],l=Math.hypot(...v);return v.map(x=>x/l);})();
+const shade=(hex,k)=>{const n=parseInt(hex.slice(1),16);return`rgb(${[n>>16,n>>8&255,n&255].map(c=>Math.round(Math.min(255,c*k))).join(',')})`;};
+function draw3(){if(!v3)return;const{g,W,H,m}=v3,a=v3.yaw*Math.PI/180,e=v3.pit*Math.PI/180,ca=Math.cos(a),sa=Math.sin(a),ce=Math.cos(e),se=Math.sin(e);
+  const D=m.R*3.2,Fk=Math.min(W,H)*.46*v3.zoom*D/m.R;
+  const P=q=>{const x=q[0]-m.c[0],y=q[1]-m.c[1],z=q[2]-m.c[2],x1=x*ca-y*sa,y1=x*sa+y*ca,up=z*ce+y1*se,dp=y1*ce-z*se,k=Fk/Math.max(D+dp,D*.05);return[W/2+x1*k,H/2-up*k,dp];};
+  g.setTransform(v3.dpr,0,0,v3.dpr,0,0);g.fillStyle='#f4f6f7';g.fillRect(0,0,W,H);
+  // 床
+  const pad=m.R*.15,fl=[[m.mn[0]-pad,m.mn[1]-pad,0],[m.mx[0]+pad,m.mn[1]-pad,0],[m.mx[0]+pad,m.mx[1]+pad,0],[m.mn[0]-pad,m.mx[1]+pad,0]].map(P);
+  g.beginPath();fl.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.closePath();g.fillStyle='#e3e8eb';g.fill();g.strokeStyle='#c4ccd2';g.lineWidth=1;g.stroke();
+  g.strokeStyle='#7d8a94';g.lineWidth=1.2;
+  for(const l of m.L){g.beginPath();l.p.forEach((q,i)=>{const s=P(q);i?g.lineTo(s[0],s[1]):g.moveTo(s[0],s[1]);});if(l.cl)g.closePath();g.stroke();}
+  // 面：遠い順
+  const fs=m.F.map(f=>{const S=f.p.map(P);return{f,S,d:S.reduce((t,q)=>t+q[2],0)/S.length};}).sort((x,y)=>y.d-x.d);
+  for(const{f,S}of fs){const k=.5+.55*Math.abs(f.n[0]*LIG[0]+f.n[1]*LIG[1]+f.n[2]*LIG[2]),fc=shade(f.c,k);
+    g.beginPath();S.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.closePath();g.fillStyle=fc;g.fill();g.strokeStyle=fc;g.lineWidth=.8;g.stroke();
+    g.strokeStyle=shade(f.c,.5);g.lineWidth=1.1;g.beginPath();
+    if(f.ed){for(let i=0;i<4;i++)if(f.ed[i]){const p0=S[i],p1=S[(i+1)%4];g.moveTo(p0[0],p0[1]);g.lineTo(p1[0],p1[1]);}}
+    else{S.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.closePath();}g.stroke();}
+  // 名前
+  const ff=getComputedStyle(document.body).fontFamily;g.textAlign='center';g.textBaseline='bottom';
+  for(const t of m.T){const s=P(t.p);g.font=t.fl?`500 11px ${ff}`:`700 13px ${ff}`;g.lineWidth=3;g.strokeStyle='rgba(255,255,255,.9)';g.strokeText(t.t,s[0],s[1]-4);g.fillStyle=t.fl?'#5b6770':'#1b2329';g.fillText(t.t,s[0],s[1]-4);}}
+function open3(){const m=build3();if(!m){toast('図が空です');return;}
+  $('#v3').hidden=false;const cv3=$('#v3Cv'),r=cv3.getBoundingClientRect(),d=window.devicePixelRatio||1;cv3.width=Math.round(r.width*d);cv3.height=Math.round(r.height*d);
+  v3={g:cv3.getContext('2d'),W:r.width,H:r.height,dpr:d,m,yaw:V3P.iso[0],pit:V3P.iso[1],zoom:1,ptr:new Map(),pd:0};
+  const ns=realS().filter(isSolid).length;
+  $('#v3Info').textContent=ns?`高さが入った図形 ${ns}個を立体にしています。高さのない線や枠は床に描いています。`:'まだ「立体の高さ」が入った図形がありません。四角・円・閉じた形を選んで、右のパネルで「立体の高さ」を入れてください。';
+  draw3();$('#v3Close').focus();}
+const close3=()=>{$('#v3').hidden=true;v3=null;};
+$('#v3Btn').onclick=open3;$('#v3Close').onclick=close3;
+$('#v3').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();close3();}});
+document.querySelectorAll('[data-v3]').forEach(b=>b.onclick=()=>{if(!v3)return;[v3.yaw,v3.pit]=V3P[b.dataset.v3];v3.zoom=1;draw3();});
+{const c3=$('#v3Cv');
+  c3.addEventListener('pointerdown',e=>{if(!v3)return;c3.setPointerCapture(e.pointerId);v3.ptr.set(e.pointerId,[e.clientX,e.clientY]);c3.style.cursor='grabbing';
+    if(v3.ptr.size===2){const[p,q]=[...v3.ptr.values()];v3.pd=Math.hypot(p[0]-q[0],p[1]-q[1]);}});
+  c3.addEventListener('pointermove',e=>{if(!v3||!v3.ptr.has(e.pointerId))return;const o=v3.ptr.get(e.pointerId);v3.ptr.set(e.pointerId,[e.clientX,e.clientY]);
+    if(v3.ptr.size===2){const[p,q]=[...v3.ptr.values()],d=Math.hypot(p[0]-q[0],p[1]-q[1]);if(v3.pd)v3.zoom=Math.max(.2,Math.min(12,v3.zoom*d/v3.pd));v3.pd=d;}
+    else{v3.yaw-=(e.clientX-o[0])*.4;v3.pit=Math.max(-5,Math.min(89.9,v3.pit+(e.clientY-o[1])*.3));}draw3();});
+  const up=e=>{if(!v3)return;v3.ptr.delete(e.pointerId);if(v3.ptr.size<2)v3.pd=0;c3.style.cursor='grab';};
+  c3.addEventListener('pointerup',up);c3.addEventListener('pointercancel',up);
+  c3.addEventListener('wheel',e=>{if(!v3)return;e.preventDefault();v3.zoom=Math.max(.2,Math.min(12,v3.zoom*Math.exp(-e.deltaY*.0015)));draw3();},{passive:false});
+  c3.addEventListener('dblclick',()=>{if(!v3)return;[v3.yaw,v3.pit]=V3P.iso;v3.zoom=1;draw3();});}
+$('#v3Png').onclick=()=>v3&&$('#v3Cv').toBlob(bl=>bl&&saveFile('png',bl,'image/png','PNG画像','-3D'),'image/png');
 $('#dxfDl').onclick=()=>saveFile('dxf',toDXF(),'application/dxf','DXF図面');
 $('#dxfCopy').onclick=()=>{const t=toDXF();$('#fileMenu').open=false;
   const fallback=()=>{sel=null;renderPanel();side.insertAdjacentHTML('beforeend',`<textarea id="dxfTa" readonly aria-label="DXFテキスト"></textarea>`);const ta=$('#dxfTa');ta.value=t;ta.focus();ta.select();toast('下の欄を全選択してコピーしてください');};
