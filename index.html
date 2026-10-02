@@ -156,6 +156,8 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
           <label class="fname">図面名（保存するファイル名）<input id="fname" type="text" placeholder="例：第1工場 配置図" autocomplete="off"></label>
           <button id="saveJson">図面を保存 (.json)</button>
           <button id="openJson">図面を開く (.json)</button>
+          <button id="askClaude">Claudeに頼む（チャットを開く）</button>
+          <button id="copyClaude">今の図をClaudeに渡す（コピー）</button>
           <button id="pasteIn">Claudeの図面を貼り付け</button>
           <button id="bgLoad">下絵の写真を読み込む</button>
           <button id="pngDl">PNG画像で書き出し</button>
@@ -1123,6 +1125,14 @@ function applyPaste(replace){let r;try{r=parseDrawing($('#pstTa').value);}catch(
 $('#pasteIn').onclick=async()=>{$('#fileMenu').open=false;$('#pstTa').value='';$('#pstInfo').textContent='';$('#pst').hidden=false;
   try{const t=await navigator.clipboard.readText();if(t&&/[\[{]/.test(t))$('#pstTa').value=t;}catch(e){}
   $('#pstTa').focus();if($('#pstTa').value)$('#pstInfo').textContent='コピーしてあった内容を入れました。よければボタンを押してください';};
+/* Claude連携（タダ）：製図板プロジェクトのチャットを開く／今の図をチャットに貼る用にコピー */
+const CLAUDE_PROJECT='https://claude.ai/project/01a0fb3c-b9af-71b9-8c46-cdd0cc592353';
+$('#askClaude').onclick=()=>{$('#fileMenu').open=false;window.open(CLAUDE_PROJECT,'_blank','noopener');};
+$('#copyClaude').onclick=()=>{$('#fileMenu').open=false;const RS=realS();if(!RS.length){toast('図が空です');return;}
+  const data=JSON.stringify({name:docName||'',shapes:RS.map(({id,pv,...o})=>o)});
+  const t=`お子様製図板の今の図面データです（書き方はプロジェクト資料 seizuban-format.md の通り）。\n下の依頼どおりに直して、図面データ全体を同じ形式で返してください。\n\n\`\`\`json\n${data}\n\`\`\`\n\n依頼：`;
+  const fallback=()=>{sel=null;renderPanel();side.insertAdjacentHTML('beforeend',`<textarea id="dxfTa" readonly aria-label="Claudeに渡すデータ"></textarea>`);const ta=$('#dxfTa');ta.value=t;ta.focus();ta.select();toast('下の欄を全選択してコピーしてください');};
+  try{navigator.clipboard.writeText(t).then(()=>toast('コピーしました。チャットに貼って「依頼：」の後にやってほしいことを書いてください'),fallback);}catch(e){fallback();}};
 $('#pstCancel').onclick=()=>$('#pst').hidden=true;$('#pstRep').onclick=()=>applyPaste(true);$('#pstAdd').onclick=()=>applyPaste(false);
 $('#pst').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();$('#pst').hidden=true;}});
 $('#fileIn').onchange=e=>{const f=e.target.files[0];if(!f)return;setView('top');const rd=new FileReader();
