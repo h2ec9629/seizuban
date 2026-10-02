@@ -213,7 +213,7 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
   <canvas id="v3Cv" style="height:min(68vh,720px);border:1px solid var(--line);border-radius:6px;background:#f4f6f7;cursor:grab"></canvas>
   <p class="tips" style="padding:0;margin:8px 0 0" id="v3Info"></p>
   <div class="row"><button type="button" data-v3="iso">斜め</button><button type="button" data-v3="front">正面</button><button type="button" data-v3="right">右</button><button type="button" data-v3="back">背面</button><button type="button" data-v3="left">左</button><button type="button" data-v3="top">真上</button><button type="button" data-v3="iso2">斜め裏</button><button type="button" data-v3="bottom">真下（裏）</button>
-  <button type="button" id="v3Png">PNGで保存</button><button type="button" id="v3Close" class="primary">閉じる</button></div></div></div>
+  <button type="button" id="v3Xr" title="手前の物体が奥を隠しているとき、手前を半透明にします">透過 ON</button><button type="button" id="v3Png">PNGで保存</button><button type="button" id="v3Close" class="primary">閉じる</button></div></div></div>
 <div class="dlg-back" id="snd" hidden><div class="dlg"><h3>Claudeに送る</h3>
   <p id="sndFiles" style="margin:0 0 10px;font-family:var(--mono);font-size:12px;word-break:break-all"></p>
   <label style="display:block;font-size:12px;color:var(--muted)">ひとこと（任意）<input id="sndReq" type="text" placeholder="例：工場の配置図です。機械の高さも入れて" style="display:block;width:100%;box-sizing:border-box;margin-top:4px"></label>
@@ -1353,11 +1353,11 @@ function ring3(s){let P;
   if(Q.length>2&&Math.hypot(Q[0][0]-Q.at(-1)[0],Q[0][1]-Q.at(-1)[1])<1e-6)Q.pop();return Q;}
 function newell(P){let x=0,y=0,z=0;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];x+=(a[1]-b[1])*(a[2]+b[2]);y+=(a[2]-b[2])*(a[0]+b[0]);z+=(a[0]-b[0])*(a[1]+b[1]);}
   const l=Math.hypot(x,y,z)||1;return[x/l,y/l,z/l];}
-function build3(){const RS=realS(),F=[],L=[],T=[];let n=0;
+function build3(){const RS=realS(),F=[],L=[],T=[];let n=0,oi=0;
   const HOLES=RS.filter(isHole).map(ring3).filter(r=>r.length>2);
   for(const s of RS){
     if(isHole(s))continue;
-    if(isSolid(s)){const B=ring3(s),m=B.length;if(m<2)continue;
+    if(isSolid(s)){const f0=F.length,B=ring3(s),m=B.length;if(m<2)continue;
       const bb=bbox([s]),cx=(bb[0]+bb[2])/2,cy=(bb[1]+bb[3])/2,f=1-(s.tp||0)/100,z0=s.z0||0,z1=z0+s.tz,nm=s.label||s.name||'';
       const Tp=B.map(p=>[cx+(p[0]-cx)*f,cy+(p[1]-cy)*f]),col=nm?PAL[n++%PAL.length]:'#cfd6dc',closed=s.type!=='poly'||s.closed;
       const sharp=B.map((p,i)=>{if(!closed&&(i===0||i===m-1))return true;const a=B[(i-1+m)%m],c=B[(i+1)%m],u=[p[0]-a[0],p[1]-a[1]],v=[c[0]-p[0],c[1]-p[1]];
@@ -1368,7 +1368,7 @@ function build3(){const RS=realS(),F=[],L=[],T=[];let n=0;
       for(const h of HS){const k=h.length,hc=[h.reduce((t,q)=>t+q[0],0)/k,h.reduce((t,q)=>t+q[1],0)/k];
         const sh=h.map((p,i)=>{const a=h[(i-1+k)%k],c=h[(i+1)%k],u=[p[0]-a[0],p[1]-a[1]],v=[c[0]-p[0],c[1]-p[1]];return(u[0]*v[0]+u[1]*v[1])/((Math.hypot(...u)*Math.hypot(...v))||1)<Math.cos(Math.PI/12);});
         for(let i=0;i<k;i++){const j=(i+1)%k;F.push({p:[[...h[i],z0],[...h[j],z0],[...h[j],z1],[...h[i],z1]],c:col,ed:[1,sh[j],1,sh[i]],cull:hc});}}
-      if(nm)T.push({p:[cx,cy,z1],t:nm});}
+      if(nm)T.push({p:[cx,cy,z1],t:nm});for(let q=f0;q<F.length;q++)F[q].o=oi;oi++;}
     else{let P=null,cl=false;
       if(s.type==='line')P=[[s.x1,s.y1],[s.x2,s.y2]];
       else if(s.type==='rect'||s.type==='poly'){P=pathPts(outline(s));cl=s.type==='rect'||s.closed;}
@@ -1396,18 +1396,24 @@ function draw3(){if(!v3)return;const{g,W,H,m}=v3,a=v3.yaw*Math.PI/180,e=v3.pit*M
   // 面：遠い順
   const EV=[-ce*sa,-ce*ca,se];
   const fs=m.F.filter(f=>!f.cull||(f.n[0]*EV[0]+f.n[1]*EV[1]+f.n[2]*EV[2]>0)).map(f=>{const S=f.p.map(P);return{f,S,d:S.reduce((t,q)=>t+q[2],0)/S.length};}).sort((x,y)=>y.d-x.d);
-  for(const{f,S}of fs){const k=.5+.55*Math.abs(f.n[0]*LIG[0]+f.n[1]*LIG[1]+f.n[2]*LIG[2]),fc=shade(f.c,k);
+  // 透過：他の物体の手前にかぶさっている物体だけ半透明にして、奥を透かす
+  const OB={};for(const{f,S,d}of fs){const o=OB[f.o]||(OB[f.o]={x0:1e9,y0:1e9,x1:-1e9,y1:-1e9,ds:0,c:0});S.forEach(q=>{o.x0=Math.min(o.x0,q[0]);o.x1=Math.max(o.x1,q[0]);o.y0=Math.min(o.y0,q[1]);o.y1=Math.max(o.y1,q[1]);});o.ds+=d;o.c++;}
+  const TR=new Set(),ok=Object.keys(OB);
+  if(v3.xr)for(const a of ok)for(const b of ok){if(a===b)continue;const A=OB[a],B=OB[b];if(A.ds/A.c>=B.ds/B.c)continue;
+    const w=Math.min(A.x1,B.x1)-Math.max(A.x0,B.x0),h=Math.min(A.y1,B.y1)-Math.max(A.y0,B.y0);
+    if(w>0&&h>0&&w*h>.05*(B.x1-B.x0)*(B.y1-B.y0))TR.add(a);}
+  for(const{f,S}of fs){g.globalAlpha=TR.has(String(f.o))?.4:1;const k=.5+.55*Math.abs(f.n[0]*LIG[0]+f.n[1]*LIG[1]+f.n[2]*LIG[2]),fc=shade(f.c,k);
     const HP=(f.h||[]).map(r=>r.map(P)),ring=(R)=>{R.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.closePath();};
     g.beginPath();ring(S);HP.forEach(ring);g.fillStyle=fc;g.fill('evenodd');g.strokeStyle=fc;g.lineWidth=.8;g.stroke();
     g.strokeStyle=shade(f.c,.5);g.lineWidth=1.1;g.beginPath();
     if(f.ed){for(let i=0;i<4;i++)if(f.ed[i]){const p0=S[i],p1=S[(i+1)%4];g.moveTo(p0[0],p0[1]);g.lineTo(p1[0],p1[1]);}}
-    else{ring(S);HP.forEach(ring);}g.stroke();}
+    else{ring(S);HP.forEach(ring);}g.stroke();g.globalAlpha=1;}
   // 名前
   const ff=getComputedStyle(document.body).fontFamily;g.textAlign='center';g.textBaseline='bottom';
   for(const t of m.T){const s=P(t.p);g.font=t.fl?`500 11px ${ff}`:`700 13px ${ff}`;g.lineWidth=3;g.strokeStyle='rgba(255,255,255,.9)';g.strokeText(t.t,s[0],s[1]-4);g.fillStyle=t.fl?'#5b6770':'#1b2329';g.fillText(t.t,s[0],s[1]-4);}}
 function open3(){const m=build3();if(!m){toast('図が空です');return;}
   $('#v3').hidden=false;const cv3=$('#v3Cv'),r=cv3.getBoundingClientRect(),d=window.devicePixelRatio||1;cv3.width=Math.round(r.width*d);cv3.height=Math.round(r.height*d);
-  v3={g:cv3.getContext('2d'),W:r.width,H:r.height,dpr:d,m,yaw:V3P.iso[0],pit:V3P.iso[1],zoom:1,ptr:new Map(),pd:0};
+  v3={g:cv3.getContext('2d'),W:r.width,H:r.height,dpr:d,m,yaw:V3P.iso[0],pit:V3P.iso[1],zoom:1,ptr:new Map(),pd:0,xr:true};$('#v3Xr').textContent='透過 ON';
   const ns=realS().filter(isSolid).length;
   $('#v3Info').textContent=ns?`高さが入った図形 ${ns}個を立体にしています。高さのない線や枠は床に描いています。`:'まだ「立体の高さ」が入った図形がありません。四角・円・閉じた形を選んで、右のパネルで「立体の高さ」を入れてください。';
   draw3();$('#v3Close').focus();}
@@ -1425,6 +1431,7 @@ document.querySelectorAll('[data-v3]').forEach(b=>b.onclick=()=>{if(!v3)return;[
   c3.addEventListener('pointerup',up);c3.addEventListener('pointercancel',up);
   c3.addEventListener('wheel',e=>{if(!v3)return;e.preventDefault();v3.zoom=Math.max(.2,Math.min(12,v3.zoom*Math.exp(-e.deltaY*.0015)));draw3();},{passive:false});
   c3.addEventListener('dblclick',()=>{if(!v3)return;[v3.yaw,v3.pit]=V3P.iso;v3.zoom=1;draw3();});}
+$('#v3Xr').onclick=()=>{if(!v3)return;v3.xr=!v3.xr;$('#v3Xr').textContent='透過 '+(v3.xr?'ON':'OFF');draw3();};
 $('#v3Png').onclick=()=>v3&&$('#v3Cv').toBlob(bl=>bl&&saveFile('png',bl,'image/png','PNG画像','-3D'),'image/png');
 $('#dxfDl').onclick=()=>saveFile('dxf',toDXF(),'application/dxf','DXF図面');
 $('#dxfCopy').onclick=()=>{const t=toDXF();$('#fileMenu').open=false;
