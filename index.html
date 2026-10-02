@@ -152,6 +152,8 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
           <button id="saveJson">図面を保存 (.json)</button>
           <button id="openJson">図面を開く (.json)</button>
           <button id="bgLoad">下絵の写真を読み込む</button>
+          <button id="pngDl">PNG画像で書き出し</button>
+          <button id="pdfDl">PDFで書き出し</button>
           <button id="dxfDl">DXFで書き出し</button>
           <button id="dxfCopy">DXFをコピー</button>
           <button id="clearAll" class="danger">新規（全部消す）</button>
@@ -1094,6 +1096,45 @@ function toDXF(){
   }
   add(0,'ENDSEC',0,'EOF');return L.join('\r\n')+'\r\n';
 }
+/* 白地・黒線の印刷用画像を作る（グリッド・選択枠・下絵は含めない） */
+function renderDrawing(){
+  const b=bbox();if(!b){toast('図が空です。何か描いてから書き出してください');return null;}
+  const bw=Math.max(b[2]-b[0],1),bh=Math.max(b[3]-b[1],1),pad=48,LONG=1600,D=2;
+  const k=Math.min((LONG-pad*2)/bw,(LONG-pad*2)/bh),w=Math.round(bw*k+pad*2),h=Math.round(bh*k+pad*2);
+  const off=document.createElement('canvas');off.width=w*D;off.height=h*D;
+  const sv={ctx,view,W,H,dpr,C};
+  try{
+    ctx=off.getContext('2d');view={s:k,ox:pad-b[0]*k,oy:h-pad+b[1]*k};W=w;H=h;dpr=D;
+    C={...C,paper:'#ffffff',ink:'#111111',block:'#ececec',muted:'#555555',accent:'#c0392b',sel:'#111111'};
+    ctx.setTransform(D,0,0,D,0,0);ctx.fillStyle=C.paper;ctx.fillRect(0,0,w,h);
+    for(const s of shapes)drawShape(s,C.ink,false);
+    if(opt.labels)drawLabels();
+  }finally{({ctx,view,W,H,dpr,C}=sv);}
+  return off;
+}
+$('#pngDl').onclick=()=>{const c=renderDrawing();if(!c)return;
+  c.toBlob(bl=>bl?saveFile('png',bl,'image/png','PNG画像'):toast('画像を作れませんでした'),'image/png');};
+/* PDF：図をJPEG画像にして1ページのPDFに埋め込む（外部ライブラリ不要。日本語もそのまま出る） */
+function makePDF(c){
+  const jpg=Uint8Array.from(atob(c.toDataURL('image/jpeg',.93).split(',')[1]),ch=>ch.charCodeAt(0));
+  const land=c.width>=c.height,PW=land?842:595,PH=land?595:842,m=28;
+  const sc=Math.min((PW-m*2)/c.width,(PH-m*2)/c.height),iw=c.width*sc,ih=c.height*sc,ix=(PW-iw)/2,iy=(PH-ih)/2;
+  const enc=new TextEncoder(),parts=[],offs=[];let len=0;
+  const put=d=>{const u=typeof d==='string'?enc.encode(d):d;parts.push(u);len+=u.length;};
+  const obj=(n,body)=>{offs[n]=len;put(`${n} 0 obj\n`);body();put('\nendobj\n');};
+  const content=`q ${iw.toFixed(2)} 0 0 ${ih.toFixed(2)} ${ix.toFixed(2)} ${iy.toFixed(2)} cm /Im0 Do Q`;
+  put('%PDF-1.4\n');
+  obj(1,()=>put('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2,()=>put('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'));
+  obj(3,()=>put(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`));
+  obj(4,()=>{put(`<< /Type /XObject /Subtype /Image /Width ${c.width} /Height ${c.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`);put(jpg);put('\nendstream');});
+  obj(5,()=>put(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`));
+  const xr=len;put('xref\n0 6\n0000000000 65535 f \n');
+  for(let i=1;i<=5;i++)put(String(offs[i]).padStart(10,'0')+' 00000 n \n');
+  put(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xr}\n%%EOF\n`);
+  return new Blob(parts,{type:'application/pdf'});
+}
+$('#pdfDl').onclick=()=>{const c=renderDrawing();if(!c)return;saveFile('pdf',makePDF(c),'application/pdf','PDF図面');};
 $('#dxfDl').onclick=()=>saveFile('dxf',toDXF(),'application/dxf','DXF図面');
 $('#dxfCopy').onclick=()=>{const t=toDXF();$('#fileMenu').open=false;
   const fallback=()=>{sel=null;renderPanel();side.insertAdjacentHTML('beforeend',`<textarea id="dxfTa" readonly aria-label="DXFテキスト"></textarea>`);const ta=$('#dxfTa');ta.value=t;ta.focus();ta.select();toast('下の欄を全選択してコピーしてください');};
