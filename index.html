@@ -727,13 +727,15 @@ function arcify(P,Cs){const n=P.length,tl=c=>Math.max(.05,c.r*1e-3);
   return{pts,bul:bul.some(v=>v)?bul:null};}
 function cleanRing(Rg){let P=Rg.slice();if(P.length>1&&hyp(P[0],P.at(-1))<1e-9)P.pop();
   return P.map(p=>[Math.round(p[0]*1000)/1000,Math.round(p[1]*1000)/1000]);}
+/* 合体・くり抜きでできた形に、元の形の高さ(tz・z0・てっぺんの縮み)を引き継ぐ（穴は高さなし） */
+function inheritZ(src,made){const b=src.find(s=>(s.tz||0)>0);if(!b)return;for(const m of made){if(m.name==='穴')continue;m.tz=b.tz;if(b.z0)m.z0=b.z0;if(b.tp)m.tp=b.tp;}}
 async function doUnion(){const list=shapes.filter(s=>unionSel.has(s.id));if(list.length<2){toast('2個以上選んでください');return;}
   try{await loadPC();}catch(e){toast('合体の部品を読み込めませんでした。ネットにつながっているか確認してください');return;}
   let res;try{res=polygonClipping.union(...list.map(s=>[closedPoly(s)]));}catch(e){toast('合体できませんでした');return;}
   saveUndo();const ids=new Set(list.map(s=>s.id)),base=list[0].label||list[0].name||'合体',made=[];shapes=shapes.filter(s=>!ids.has(s.id));
   const circs=[];for(const s of list){if(s.type==='circle')circs.push({c:[s.cx,s.cy],r:s.r});else if(s.type==='arc'){const e=arcEl(s);if(e.t==='A')circs.push(e);}else outline(s).forEach(e=>{if(e.t==='A')circs.push(e);});}
   for(const pg of res)pg.forEach((ring,k)=>{const R0=cleanRing(ring);if(R0.length<3)return;const A=arcify(R0,circs);const sh={id:nextId++,type:'poly',closed:true,pts:A.pts,name:k?'穴':base};if(A.bul)sh.bul=A.bul;shapes.push(sh);made.push(sh);});
-  sel=made[0]?made[0].id:null;unionSel.clear();setTool('select');commit();
+  inheritZ(list,made);sel=made[0]?made[0].id:null;unionSel.clear();setTool('select');commit();
   toast(res.length>1?`重なっていない部分があったので ${res.length} 個の形になりました`:'合体しました（戻すで元に戻せます）');}
 $('#uniGo').onclick=doUnion;
 let cutSel=[];
@@ -745,7 +747,7 @@ async function doCut(){const list=cutSel.map(id=>shapes.find(x=>x.id===id)).filt
   const circs=circsOf(list),base=list[0].label||list[0].name||'くり抜き',made=[];saveUndo();const ids=new Set(list.map(x=>x.id));shapes=shapes.filter(x=>!ids.has(x.id));
   for(const pg of res)pg.forEach((ring,k)=>{const R0=cleanRing(ring);if(R0.length<3)return;const A=arcify(R0,circs);const sh={id:nextId++,type:'poly',closed:true,pts:A.pts,name:k?'穴':base};if(A.bul)sh.bul=A.bul;shapes.push(sh);made.push(sh);});
   if(made.length>1){const gid='g'+Date.now().toString(36);made.forEach(m=>m.grp=gid);}
-  sel=made[0]?made[0].id:null;cutSel=[];setTool('select');commit();
+  inheritZ(list.slice(0,1),made);sel=made[0]?made[0].id:null;cutSel=[];setTool('select');commit();
   const holes=made.filter(m=>m.name==='穴').length;toast(holes?`くり抜きました（中の穴 ${holes}個はグループでまとめてあります）`:'くり抜きました（戻すで元に戻せます）');}
 $('#cutGo').onclick=doCut;
 const HELP={
@@ -1282,8 +1284,8 @@ function setView(v){if(v===VW)return;temp=null;
 $('#vwSel').onchange=e=>setView(e.target.value);
 
 /* ---------- 6面図（第三角法） ---------- */
-const isSolid=s=>!s.hole&&(s.type==='rect'||s.type==='circle'||s.type==='poly')&&(s.tz||0)>0;
-const isHole=s=>!!s.hole&&(s.type==='circle'||(s.type==='poly'&&s.closed));
+const isSolid=s=>!s.hole&&s.name!=='穴'&&(s.type==='rect'||s.type==='circle'||s.type==='poly')&&(s.tz||0)>0;
+const isHole=s=>(!!s.hole||s.name==='穴')&&(s.type==='circle'||(s.type==='poly'&&s.closed));   // 「くり抜き」でできた穴（名前が「穴」の形）も自動で貫通穴あつかい
 const pip=(p,R)=>{let c=false;for(let i=0,j=R.length-1;i<R.length;j=i++){const a=R[i],b=R[j];if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])c=!c;}return c;};
 function mirY(s){const c=clone(s);switch(c.type){   // 上下反転（底面図用）。文字は読める向きのまま
   case'line':case'dim':c.y1=-c.y1;c.y2=-c.y2;if(c.type==='dim')c.off=-c.off;break;
