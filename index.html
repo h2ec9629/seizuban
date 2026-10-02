@@ -156,6 +156,7 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
           <label class="fname">図面名（保存するファイル名）<input id="fname" type="text" placeholder="例：第1工場 配置図" autocomplete="off"></label>
           <button id="saveJson">図面を保存 (.json)</button>
           <button id="openJson">図面を開く (.json)</button>
+          <button id="pasteIn">Claudeの図面を貼り付け</button>
           <button id="bgLoad">下絵の写真を読み込む</button>
           <button id="pngDl">PNG画像で書き出し</button>
           <button id="pdfDl">PDFで書き出し</button>
@@ -210,6 +211,10 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
   <p class="tips" style="padding:0;margin:8px 0 0" id="v3Info"></p>
   <div class="row"><button type="button" data-v3="iso">斜め</button><button type="button" data-v3="front">正面</button><button type="button" data-v3="right">右</button><button type="button" data-v3="back">背面</button><button type="button" data-v3="left">左</button><button type="button" data-v3="top">真上</button>
   <button type="button" id="v3Png">PNGで保存</button><button type="button" id="v3Close" class="primary">閉じる</button></div></div></div>
+<div class="dlg-back" id="pst" hidden><div class="dlg"><h3>Claudeが作った図面を貼り付け</h3>
+  <textarea id="pstTa" style="width:100%;height:220px;font-family:var(--mono);font-size:12px;box-sizing:border-box" placeholder="チャットでClaudeが出した図面データをここに貼り付け（```json ～ ``` ごとでOK）"></textarea>
+  <p class="tips" style="padding:0;margin:8px 0 0" id="pstInfo"></p>
+  <div class="row"><button type="button" id="pstCancel">キャンセル</button><button type="button" id="pstAdd">今の図に足す</button><button type="button" id="pstRep" class="primary">置き換える</button></div></div></div>
 <div class="dlg-back" id="six" hidden><div class="dlg" style="width:min(1100px,100%)"><h3>6面図（第三角法：上=平面／中段 左・正面・右・背面／下=底面）</h3>
   <canvas id="sixCv" style="height:auto;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:default"></canvas>
   <p class="tips" style="padding:0;margin:8px 0 0" id="sixInfo"></p>
@@ -1097,6 +1102,29 @@ async function saveFile(ext,text,mime,desc,sfx=''){const name=`${baseName()}${sf
   download(name,text,mime);}
 $('#saveJson').onclick=()=>saveFile('json',JSON.stringify({app:'kantan-cad',v:1,name:docName,nextId,shapes:realS(),bg},null,1),'application/json','製図板の図面');
 $('#openJson').onclick=()=>$('#fileIn').click();
+/* Claudeがチャットで出した図面データ（JSON）を貼り付けて取り込む。```json の囲みや前後の説明文があってもOK */
+const N3=v=>{const n=+v;return isFinite(n)?n:0;};
+function parseDrawing(t){t=String(t||'');const i=t.search(/[\[{]/);if(i<0)throw 0;const ob=t[i],cb=ob==='{'?'}':']',j=t.lastIndexOf(cb);if(j<i)throw 0;
+  const d=JSON.parse(t.slice(i,j+1)),list=Array.isArray(d)?d:d.shapes;if(!Array.isArray(list))throw 0;
+  const num=['x','y','w','h','x1','y1','x2','y2','xm','ym','cx','cy','r','off','size','rad','tz','z0','tp'],out=[],bad=[];
+  for(const o of list){if(!o||!NAMES[o.type]){bad.push(o&&o.type);continue;}const c={...o};num.forEach(k=>{if(k in c&&!Array.isArray(c[k]))c[k]=N3(c[k]);});
+    if(c.type==='poly'){if(!Array.isArray(c.pts)||c.pts.length<2){bad.push('poly');continue;}c.pts=c.pts.map(p=>[N3(p[0]),N3(p[1])]);c.closed=!!c.closed;}
+    if(c.type==='rect'){if(c.w<0){c.x+=c.w;c.w=-c.w;}if(c.h<0){c.y+=c.h;c.h=-c.h;}c.label=c.label||'';}
+    if(c.type==='circle')c.r=Math.abs(c.r);if(c.type==='text'){c.text=String(c.text||'');c.size=Math.abs(c.size)||10;}
+    if(c.type==='dim'&&!c.off)c.off=Math.max(10,Math.hypot(c.x2-c.x1,c.y2-c.y1)/10);
+    if(c.type==='arc'&&!('xm' in c)){bad.push('arc');continue;}out.push(c);}
+  if(!out.length)throw 0;return{shapes:out,name:Array.isArray(d)?'':(d.name||''),bad};}
+function applyPaste(replace){let r;try{r=parseDrawing($('#pstTa').value);}catch(e){$('#pstInfo').textContent='読み取れませんでした。Claudeが出した { から } までを丸ごと貼り付けてください';return;}
+  setView('top');saveUndo();const gk='p'+Date.now().toString(36);
+  const list=r.shapes.map(s=>{const c={...s,id:nextId++};if(c.grp)c.grp=gk+c.grp;return c;});
+  if(replace){shapes=list;if(r.name){docName=r.name;$('#fname').value=docName;}}else shapes.push(...list);
+  sel=null;$('#pst').hidden=true;commit();fit();
+  toast(`${list.length}個の図形を${replace?'読み込みました':'足しました'}${r.bad.length?`（読めない図形 ${r.bad.length}個は飛ばしました）`:''}。おかしければ「戻す」で元通り`);}
+$('#pasteIn').onclick=async()=>{$('#fileMenu').open=false;$('#pstTa').value='';$('#pstInfo').textContent='';$('#pst').hidden=false;
+  try{const t=await navigator.clipboard.readText();if(t&&/[\[{]/.test(t))$('#pstTa').value=t;}catch(e){}
+  $('#pstTa').focus();if($('#pstTa').value)$('#pstInfo').textContent='コピーしてあった内容を入れました。よければボタンを押してください';};
+$('#pstCancel').onclick=()=>$('#pst').hidden=true;$('#pstRep').onclick=()=>applyPaste(true);$('#pstAdd').onclick=()=>applyPaste(false);
+$('#pst').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();$('#pst').hidden=true;}});
 $('#fileIn').onchange=e=>{const f=e.target.files[0];if(!f)return;setView('top');const rd=new FileReader();
   rd.onload=()=>{try{const d=JSON.parse(rd.result);if(!Array.isArray(d.shapes))throw 0;saveUndo();docName=d.name||f.name.replace(/\.json$/i,'');$('#fname').value=docName;shapes=d.shapes;nextId=Math.max(d.nextId||0,...shapes.map(s=>s.id+1),1);sel=null;setBg(d.bg||null);commit();fit();toast(`${f.name} を開きました`);}
     catch(err){toast('開けませんでした。このアプリで保存した .json を選んでください');}};
