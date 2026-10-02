@@ -156,6 +156,7 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
           <label class="fname">図面名（保存するファイル名）<input id="fname" type="text" placeholder="例：第1工場 配置図" autocomplete="off"></label>
           <button id="saveJson">図面を保存 (.json)</button>
           <button id="openJson">図面を開く (.json)</button>
+          <button id="sendClaude">Claudeに送る（図面PDF・イラスト）</button>
           <button id="askClaude">Claudeに頼む（チャットを開く）</button>
           <button id="copyClaude">今の図をClaudeに渡す（コピー）</button>
           <button id="pasteIn">Claudeの図面を貼り付け</button>
@@ -168,7 +169,7 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
           <small>描いた図はこの端末のブラウザに自動保存されます。書き出しが始まらない時は「コピー」を使ってください。</small>
         </div>
       </details>
-      <input type="file" id="fileIn" accept=".json,application/json" hidden>
+      <input type="file" id="fileIn" accept=".json,application/json" hidden><input type="file" id="sndIn" accept="image/*,application/pdf,.pdf" multiple hidden>
       <input type="file" id="bgIn" accept="image/*" hidden>
     </div>
   </header>
@@ -213,6 +214,11 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
   <p class="tips" style="padding:0;margin:8px 0 0" id="v3Info"></p>
   <div class="row"><button type="button" data-v3="iso">斜め</button><button type="button" data-v3="front">正面</button><button type="button" data-v3="right">右</button><button type="button" data-v3="back">背面</button><button type="button" data-v3="left">左</button><button type="button" data-v3="top">真上</button>
   <button type="button" id="v3Png">PNGで保存</button><button type="button" id="v3Close" class="primary">閉じる</button></div></div></div>
+<div class="dlg-back" id="snd" hidden><div class="dlg"><h3>Claudeに送る</h3>
+  <p id="sndFiles" style="margin:0 0 10px;font-family:var(--mono);font-size:12px;word-break:break-all"></p>
+  <label style="display:block;font-size:12px;color:var(--muted)">ひとこと（任意）<input id="sndReq" type="text" placeholder="例：工場の配置図です。機械の高さも入れて" style="display:block;width:100%;box-sizing:border-box;margin-top:4px"></label>
+  <p class="tips" style="padding:0;margin:10px 0 0" id="sndInfo"></p>
+  <div class="row"><button type="button" id="sndCancel">キャンセル</button><button type="button" id="sndCopy">お願い文をコピー</button><button type="button" id="sndGo" class="primary">共有画面を開く</button></div></div></div>
 <div class="dlg-back" id="pst" hidden><div class="dlg"><h3>Claudeが作った図面を貼り付け</h3>
   <textarea id="pstTa" style="width:100%;height:220px;font-family:var(--mono);font-size:12px;box-sizing:border-box" placeholder="チャットでClaudeが出した図面データをここに貼り付け（```json ～ ``` ごとでOK）"></textarea>
   <p class="tips" style="padding:0;margin:8px 0 0" id="pstInfo"></p>
@@ -1133,6 +1139,38 @@ $('#copyClaude').onclick=()=>{$('#fileMenu').open=false;const RS=realS();if(!RS.
   const t=`お子様製図板の今の図面データです（書き方はプロジェクト資料 seizuban-format.md の通り）。\n下の依頼どおりに直して、図面データ全体を同じ形式で返してください。\n\n\`\`\`json\n${data}\n\`\`\`\n\n依頼：`;
   const fallback=()=>{sel=null;renderPanel();side.insertAdjacentHTML('beforeend',`<textarea id="dxfTa" readonly aria-label="Claudeに渡すデータ"></textarea>`);const ta=$('#dxfTa');ta.value=t;ta.focus();ta.select();toast('下の欄を全選択してコピーしてください');};
   try{navigator.clipboard.writeText(t).then(()=>toast('コピーしました。チャットに貼って「依頼：」の後にやってほしいことを書いてください'),fallback);}catch(e){fallback();}};
+/* 図面PDF・イラストを共有画面からClaudeのアプリに渡す。プロジェクト外のチャットでも形が崩れないよう書き方の要約を同梱 */
+const SND_SPEC=`お子様製図板（自作の2D CAD）に取り込むので、添付の図面を図面データ(JSON)にしてください。
+返すのは \`\`\`json のコードブロック1つだけ。単位mm、Xは右が+、Yは上が+。
+形式：{"name":"図面名","shapes":[ 図形… ]}
+図形：
+rect {"type":"rect","x","y","w","h","label"?,"rad"?}（x,yは左下の点）
+circle {"type":"circle","cx","cy","r"}（穴もこれ）
+line {"type":"line","x1","y1","x2","y2"}
+arc {"type":"arc","x1","y1","xm","ym","x2","y2"}（始点・途中の点・終点を通る円弧）
+poly {"type":"poly","pts":[[x,y],…],"closed":true/false}
+dim {"type":"dim","x1","y1","x2","y2","off"}（寸法線。off は点1→点2に進む左側が+）
+text {"type":"text","x","y","text","size"}
+立体にしたい物（機械・棚・板厚など）は rect/circle/閉じたpoly に tz(高さ) z0(床からの浮き) tp(てっぺんの縮み%) を付ける。
+図に書いてある寸法を最優先。推測した寸法はJSONの後に短く列挙。寸法線は主な寸法だけ。`;
+let sndFiles=[];
+const sndText=()=>{const r=$('#sndReq').value.trim();return SND_SPEC+(r?`\n\n依頼：${r}`:'');};
+const canShareFiles=f=>{try{return!!(navigator.canShare&&navigator.canShare({files:f}));}catch(e){return false;}};
+$('#sendClaude').onclick=()=>{$('#fileMenu').open=false;$('#sndIn').click();};
+$('#sndIn').onchange=e=>{sndFiles=[...e.target.files];e.target.value='';if(!sndFiles.length)return;
+  $('#sndFiles').textContent=sndFiles.map(f=>`📎 ${f.name}（${Math.max(1,Math.round(f.size/1024))}KB）`).join('\n');$('#sndReq').value='';
+  const ok=canShareFiles(sndFiles);$('#sndGo').textContent=ok?'共有画面を開く':'チャットを開く（お願い文はコピー）';
+  $('#sndInfo').textContent=ok?'共有画面で「Claude」を選んで送信してください。Claudeが出てこない時は「お願い文をコピー」→チャットを開いてファイルを手で添付。返ってきた図面は「Claudeの図面を貼り付け」で取り込めます。'
+    :'この端末は共有画面でファイルを渡せないようです。お願い文をコピーしてチャットを開くので、選んだファイルを手で添付して、お願い文を貼ってください。';
+  $('#snd').hidden=false;$('#sndGo').focus();};
+const sndCopy=()=>{const t=sndText();try{return navigator.clipboard.writeText(t).then(()=>true,()=>false);}catch(e){return Promise.resolve(false);}};
+$('#sndCopy').onclick=()=>sndCopy().then(ok=>toast(ok?'お願い文をコピーしました。チャットに貼ってください':'コピーできませんでした'));
+$('#sndGo').onclick=async()=>{
+  if(canShareFiles(sndFiles)){try{await navigator.share({files:sndFiles,text:sndText(),title:'製図板に起こして'});$('#snd').hidden=true;toast('返ってきた図面は「ファイル ▾ → Claudeの図面を貼り付け」で取り込めます');}
+    catch(err){if(err.name!=='AbortError')toast('共有できませんでした。「お願い文をコピー」→チャットで手で添付してください');}return;}
+  const ok=await sndCopy();window.open(CLAUDE_PROJECT,'_blank','noopener');$('#snd').hidden=true;toast(ok?'お願い文をコピーしました。チャットにファイルを添付して貼り付けてください':'チャットにファイルを添付してください');};
+$('#sndCancel').onclick=()=>$('#snd').hidden=true;
+$('#snd').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();$('#snd').hidden=true;}});
 $('#pstCancel').onclick=()=>$('#pst').hidden=true;$('#pstRep').onclick=()=>applyPaste(true);$('#pstAdd').onclick=()=>applyPaste(false);
 $('#pst').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();$('#pst').hidden=true;}});
 $('#fileIn').onchange=e=>{const f=e.target.files[0];if(!f)return;setView('top');const rd=new FileReader();
