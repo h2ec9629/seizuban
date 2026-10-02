@@ -1155,13 +1155,15 @@ text {"type":"text","x","y","text","size"}
 図に書いてある寸法を最優先。推測した寸法はJSONの後に短く列挙。寸法線は主な寸法だけ。`;
 let sndFiles=[];
 const sndText=()=>{const r=$('#sndReq').value.trim();return SND_SPEC+(r?`\n\n依頼：${r}`:'');};
-const canShareFiles=f=>{try{return!!(navigator.canShare&&navigator.canShare({files:f}));}catch(e){return false;}};
+// パソコン（Windows・Mac）は共有画面にClaudeが出ないので、最初から「コピー＋チャットを開く」にする。iPadはMac扱いだがタッチで見分ける
+const isPC=/Windows|Macintosh|Linux|CrOS/.test(navigator.userAgent)&&!/Android/.test(navigator.userAgent)&&!(navigator.maxTouchPoints>1);
+const canShareFiles=f=>{if(isPC)return false;try{return!!(navigator.canShare&&navigator.canShare({files:f}));}catch(e){return false;}};
 $('#sendClaude').onclick=()=>{$('#fileMenu').open=false;$('#sndIn').click();};
 $('#sndIn').onchange=e=>{sndFiles=[...e.target.files];e.target.value='';if(!sndFiles.length)return;
   $('#sndFiles').textContent=sndFiles.map(f=>`📎 ${f.name}（${Math.max(1,Math.round(f.size/1024))}KB）`).join('\n');$('#sndReq').value='';
   const ok=canShareFiles(sndFiles);$('#sndGo').textContent=ok?'共有画面を開く':'チャットを開く（お願い文はコピー）';
   $('#sndInfo').textContent=ok?'共有画面で「Claude」を選んで送信してください。Claudeが出てこない時は「お願い文をコピー」→チャットを開いてファイルを手で添付。返ってきた図面は「Claudeの図面を貼り付け」で取り込めます。'
-    :'この端末は共有画面でファイルを渡せないようです。お願い文をコピーしてチャットを開くので、選んだファイルを手で添付して、お願い文を貼ってください。';
+    :(isPC?'パソコンでは共有画面にClaudeが出ないので、お願い文をコピーしてチャットを開きます。選んだファイルをチャット欄にドラッグして、お願い文を貼り付け（Ctrl+V）してください。':'この端末は共有画面でファイルを渡せないようです。お願い文をコピーしてチャットを開くので、選んだファイルを手で添付して、お願い文を貼ってください。');
   $('#snd').hidden=false;$('#sndGo').focus();};
 const sndCopy=()=>{const t=sndText();try{return navigator.clipboard.writeText(t).then(()=>true,()=>false);}catch(e){return Promise.resolve(false);}};
 $('#sndCopy').onclick=()=>sndCopy().then(ok=>toast(ok?'お願い文をコピーしました。チャットに貼ってください':'コピーできませんでした'));
