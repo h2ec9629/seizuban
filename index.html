@@ -309,7 +309,7 @@ const HINTS={
   circle:'中心をタップ → 半径の位置をタップ',
   dim:'測りたい2点をタップ。寸法線の離れはパネルで調整',
   text:'置きたい場所をタップ → パネルで文字を入力',
-  pan:'ドラッグで画面移動。2本指でズーム、マウスはCtrl＋ホイール（Shift＋ホイールでグリッド間隔）'
+  pan:'ドラッグで画面移動。2本指でズーム、マウスはCtrl＋ホイール（Shift＋ホイールでグリッド間隔、Alt＋ホイールで縦回転、ホイールを左右に倒すと横回転）'
 };
 let docName='';
 let shapes=[], nextId=1, sel=null, tool='select';
@@ -957,8 +957,20 @@ function up(e){
 cv.addEventListener('pointerup',up);
 cv.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);pinch=null;panDrag=null;if(temp&&temp.dragging)temp=null;draw();});
 window.addEventListener('contextmenu',e=>{if(stage.contains(e.target))e.preventDefault();},true);
-let gridAcc=0;
+let gridAcc=0,rotAcc=0,rotAccX=0,rotLock=0;
+const VORD=['front','right','back','left'];
 cv.addEventListener('wheel',e=>{
+  // Alt＋ホイール＝縦回転（平面⇔正面）、ホイールを左右に倒す（チルト）＝横回転（正面→右→背面→左）
+  const tilt=!e.shiftKey&&!e.ctrlKey&&!e.altKey&&Math.abs(e.deltaX)>Math.abs(e.deltaY);
+  if(e.altKey||tilt){e.preventDefault();
+    if(e.altKey&&!tilt){rotAcc+=(e.deltaY||e.deltaX);if(Math.abs(rotAcc)<40)return;}
+    else{rotAccX+=e.deltaX;if(Math.abs(rotAccX)<40)return;}
+    const now=Date.now(),isV=e.altKey&&!tilt,dir=(isV?rotAcc:rotAccX)>0?1:-1;rotAcc=0;rotAccX=0;
+    if(now<rotLock)return;
+    let nv=null;
+    if(isV){if(dir>0&&VW==='top')nv='front';else if(dir<0&&VW!=='top')nv='top';}
+    else if(VW!=='top'){const i=VORD.indexOf(VW);nv=VORD[(i+(dir>0?1:3))%4];}
+    if(nv){rotLock=now+350;setViewAnim(nv);}return;}
   if(e.shiftKey&&!e.ctrlKey){e.preventDefault();
     gridAcc+=(e.deltaY||e.deltaX);if(Math.abs(gridAcc)<40)return;
     const dir=gridAcc>0?1:-1;gridAcc=0;const sel=$('#gridSel');
