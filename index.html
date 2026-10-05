@@ -1346,14 +1346,14 @@ function setViewAnim(v){
   st.appendChild(oc);
   const T0=performance.now(),DUR=700,saved=v3;
   const state={g:oc.getContext('2d'),W,H,dpr:d,m,zoom:1,ptr:new Map(),pd:0,xr:false};
-  let raf=0,fin=false;
+  let raf=0,fin=false,hold=0;
   const frame=()=>{if(fin)return;const t=Math.min(1,(performance.now()-T0)/DUR),e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
     state.yaw=A[0]+dy*e;state.pit=A[1]+(B[1]-A[1])*e;
     state.k=ov.s*Math.pow(nv.s/ov.s,e);
     state.ox=c0[0]+(c1[0]-c0[0])*e-W/2;state.oy=c0[1]+(c1[1]-c0[1])*e-H/2;
     v3=state;try{draw3();}finally{v3=saved;}
-    if(t<1)raf=requestAnimationFrame(frame);else done();};
-  function done(){if(fin)return;fin=true;cancelAnimationFrame(raf);vAnim=null;oc.style.opacity='0';setTimeout(()=>oc.remove(),180);}
+    if(t<1)raf=requestAnimationFrame(frame);else hold=setTimeout(done,500);};
+  function done(){if(fin)return;fin=true;cancelAnimationFrame(raf);clearTimeout(hold);vAnim=null;oc.style.opacity='0';setTimeout(()=>oc.remove(),180);}
   vAnim={done};frame();}
 $('#vwSel').onchange=e=>setViewAnim(e.target.value);
 
