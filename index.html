@@ -34,7 +34,7 @@ body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);o
 .brand{font-weight:600;font-size:15px;letter-spacing:.04em;margin-right:6px;white-space:nowrap}
 .brand small{font-family:var(--mono);font-weight:400;color:var(--muted);font-size:11px;margin-left:6px}
 .tools,.acts{display:flex;flex-wrap:wrap;gap:4px}
-.acts{margin-left:auto}
+@media (min-width:761px){.acts{order:-1;flex:0 0 100%}}   /* 1段目＝操作ボタン、2段目＝作図ツール。どちらも左詰め */
 button,.btn,select{font:inherit;font-size:13px;color:var(--ink);background:var(--panel);border:1px solid var(--line);
   border-radius:6px;min-height:40px;padding:0 10px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 button:hover,.btn:hover{border-color:var(--muted)}
