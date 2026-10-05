@@ -309,7 +309,7 @@ const HINTS={
   circle:'中心をタップ → 半径の位置をタップ',
   dim:'測りたい2点をタップ。寸法線の離れはパネルで調整',
   text:'置きたい場所をタップ → パネルで文字を入力',
-  pan:'ドラッグで画面移動。2本指でズーム、マウスはホイール'
+  pan:'ドラッグで画面移動。2本指でズーム、マウスはCtrl＋ホイール'
 };
 let docName='';
 let shapes=[], nextId=1, sel=null, tool='select';
@@ -769,7 +769,7 @@ const HELP={
   poly:{t:'折れ線',l:['点を順にタップ','<b>最初の点</b>をタップで閉じる／最後の点をもう一度タップかEnterで終了','2点を選んで右クリック → 円弧にできます']},
   dim:{t:'寸法',l:['測りたい<b>2点</b>をタップ','寸法線の離れは右の欄で調整']},
   text:{t:'文字',l:['置きたい場所をタップ','右の欄で文字と高さを入力']},
-  pan:{t:'画面移動',l:['ドラッグで画面を動かす','ホイールか2本指でズーム、<b>全体</b>で全部表示']},
+  pan:{t:'画面移動',l:['ドラッグで画面を動かす','Ctrl＋ホイールか2本指でズーム、<b>全体</b>で全部表示']},
   union:{t:'合体',l:['まとめたい形をタップで選ぶ','右上の<b>合体する</b>かEnter','円や円弧の丸みは円弧のまま残ります']},
   cut:{t:'くり抜き',l:['まず<b>残す形</b>をタップ（青）','次に<b>穴をあける形</b>をタップ（オレンジ）','右上の<b>くり抜く</b>かEnter']},
   group:{t:'グループ',l:['まとめたい図形をタップで選ぶ','右上の<b>グループにする</b>かEnter','1個つかめば全部一緒に動きます']},
@@ -934,7 +934,7 @@ function up(e){
 cv.addEventListener('pointerup',up);
 cv.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);pinch=null;panDrag=null;if(temp&&temp.dragging)temp=null;draw();});
 window.addEventListener('contextmenu',e=>{if(stage.contains(e.target))e.preventDefault();},true);
-cv.addEventListener('wheel',e=>{e.preventDefault();const[sx,sy]=pos(e);const w=toW(sx,sy);
+cv.addEventListener('wheel',e=>{if(!e.ctrlKey)return;e.preventDefault();const[sx,sy]=pos(e);const w=toW(sx,sy);
   const ns=Math.min(400,Math.max(.005,view.s*Math.pow(1.0015,-e.deltaY)));view.s=ns;view.ox=sx-w[0]*ns;view.oy=sy+w[1]*ns;draw();},{passive:false});
 
 /* ---------- keys ---------- */
