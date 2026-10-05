@@ -1336,7 +1336,13 @@ function setViewAnim(v){
   // 2D画面での「図の中心」の位置（この点を基準に3Dを重ねる）
   const cen=(vw,vi)=>{const c=m.c,u=vw==='top'?c[0]:vw==='front'?c[0]:vw==='back'?-c[0]:vw==='right'?c[1]:-c[1];
     return vw==='top'?[vi.ox+c[0]*vi.s,vi.oy-c[1]*vi.s]:[vi.ox+u*vi.s,vi.oy-c[2]*vi.s];};
+  const c0b=cen(oldVW,ov);
   setView(v);                       // 中身は先に切り替え、上から3Dの絵で覆っておく
+  { // 倍率と中心位置は切り替え前のまま引き継ぐ（新しい向きの「全体表示」にはしない）
+    const c=m.c,u=v==='front'?c[0]:v==='back'?-c[0]:v==='right'?c[1]:-c[1];
+    view.s=ov.s;
+    if(v==='top'){view.ox=c0b[0]-c[0]*ov.s;view.oy=c0b[1]+c[1]*ov.s;}else{view.ox=c0b[0]-u*ov.s;view.oy=c0b[1]+c[2]*ov.s;}
+    draw();}
   const nv={...view},A=VCAM(oldVW),B=VCAM(v),dy=((B[0]-A[0]+540)%360)-180,c0=cen(oldVW,ov),c1=cen(v,nv);
   const st=$('#stage'),oc=document.createElement('canvas');
   oc.width=Math.round(W*d);oc.height=Math.round(H*d);
