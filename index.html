@@ -535,7 +535,8 @@ function badges(s,hs,col){let pts;
 function draw(){
   if(!W)return;
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle=C.paper;ctx.fillRect(0,0,W,H);
-  drawGrid();
+  const gridTop=!!((drag&&drag.moved)||temp);   // 移動・編集・作成中はグリッドを図の前面に出す
+  if(!gridTop)drawGrid();
   if(VW!=='top'&&VW!=='ori'){const z=toS(0,0)[1];ctx.save();ctx.strokeStyle=C.accent;ctx.globalAlpha=.7;ctx.lineWidth=1.5;ctx.setLineDash([10,4,2,4]);ctx.beginPath();ctx.moveTo(0,z);ctx.lineTo(W,z);ctx.stroke();ctx.restore();
     ctx.save();ctx.font=`600 12px ${MONO}`;ctx.fillStyle=C.accent;ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText('床（高さ0）',8,z-4);ctx.restore();}
   if(VW==='top'&&bg&&bg.vis&&bgImg.complete&&bgImg.naturalWidth){const c=toS(bg.x+bg.w/2,bg.y+bg.h/2),w=bg.w*view.s,h=bg.h*view.s;ctx.save();ctx.globalAlpha=bg.op;ctx.translate(c[0],c[1]);ctx.rotate(-(bg.rot||0)*Math.PI/180);ctx.drawImage(bgImg,-w/2,-h/2,w,h);ctx.restore();}
@@ -554,6 +555,7 @@ function draw(){
       ctx.save();ctx.fillStyle=C.sel;ctx.globalAlpha=.08;ctx.fillRect(x,y,w,h);ctx.globalAlpha=.9;ctx.strokeStyle=C.sel;ctx.lineWidth=1.5;ctx.setLineDash([6,4]);ctx.strokeRect(x,y,w,h);ctx.restore();}
     for(const m of mem)if(m!==ss){ctx.save();ctx.shadowColor=C.sel;ctx.shadowBlur=12;drawShape(m,C.sel,false);ctx.restore();}
     ctx.save();ctx.shadowColor=C.sel;ctx.shadowBlur=12;drawShape(ss,C.sel,true);ctx.restore();drawShape(ss,C.sel,true);}
+  if(gridTop){ctx.save();ctx.globalAlpha=.75;drawGrid();ctx.restore();}
   if(temp&&temp.type==='persp'){const Q=temp.q.map(q=>toS(...q));ctx.save();ctx.strokeStyle=C.accent;ctx.lineWidth=2;ctx.beginPath();Q.forEach((q,i)=>i?ctx.lineTo(...q):ctx.moveTo(...q));if(Q.length===4)ctx.closePath();ctx.stroke();
     ctx.font=`600 11px ${MONO}`;ctx.textAlign='center';ctx.textBaseline='middle';Q.forEach((q,i)=>{ctx.fillStyle=C.accent;ctx.beginPath();ctx.arc(q[0],q[1],9,0,7);ctx.fill();ctx.fillStyle=C.paper;ctx.fillText(String(i+1),q[0],q[1]+.5);});ctx.restore();}
   if(temp&&temp.type==='focus'){const a=toS(...temp.a),b=toS(...temp.cur);ctx.save();ctx.strokeStyle=C.accent;ctx.lineWidth=2;ctx.setLineDash([6,4]);ctx.strokeRect(Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.abs(b[0]-a[0]),Math.abs(b[1]-a[1]));ctx.restore();}
