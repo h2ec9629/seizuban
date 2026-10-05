@@ -495,6 +495,8 @@ function drawShape(s,col,selected){
   else if(s.type==='rect'){const a=toS(s.x,s.y+s.h);const w=s.w*view.s,h=s.h*view.s;
     if(s.rad>0)drawPath(outline(s),true,!!s.label);
     else{if(s.pv){ctx.fillStyle=C.paper;ctx.fillRect(a[0],a[1],w,h);}if(s.label){ctx.fillStyle=C.block;ctx.fillRect(a[0],a[1],w,h);}ctx.fillStyle=col;ctx.strokeRect(a[0],a[1],w,h);
+      if(s.disc){ctx.save();ctx.lineWidth=selected?2.5:1.5;ctx.beginPath();ctx.ellipse(a[0]+w/2,a[1]+h/2,Math.abs(w)/2,Math.abs(h)/2,0,0,T2);ctx.stroke();ctx.restore();}
+      if(s.hc&&!s.pv){ctx.save();ctx.lineWidth=1;ctx.setLineDash([8,3,2,3]);ctx.beginPath();if(s.hc==='y'){ctx.moveTo(a[0]+w/2,a[1]-6);ctx.lineTo(a[0]+w/2,a[1]+h+6);}else{ctx.moveTo(a[0]-6,a[1]+h/2);ctx.lineTo(a[0]+w+6,a[1]+h/2);}ctx.stroke();ctx.restore();}
       if(s.cyl){ctx.save();ctx.lineWidth=1;ctx.setLineDash([8,3,2,3]);ctx.beginPath();ctx.moveTo(a[0]+w/2,a[1]-6);ctx.lineTo(a[0]+w/2,a[1]+h+6);ctx.stroke();ctx.restore();}}
     if(s.label){ctx.fillStyle=col;ctx.font=`600 13px ${ff}`;ctx.textAlign='center';ctx.textBaseline='middle';
       const c=toS(s.x+s.w/2,s.y+s.h/2);ctx.fillText(s.label,c[0],c[1]-(h>40?8:0));
@@ -703,7 +705,11 @@ function rmPt(s,i){s.pts.splice(i,1);s.rad&&s.rad.splice(i,1);if(s.bul){s.bul.sp
 function insPt(s,i,p){const b=(s.bul||[])[i];if(b){const e=bulEl(s.pts[i],s.pts[(i+1)%s.pts.length],b),m=e.s+nang(e.e-e.s)/2,hb=Math.tan(Math.atan(b)/2);p=[e.c[0]+e.r*Math.cos(m),e.c[1]+e.r*Math.sin(m)];s.bul.splice(i,1,hb,hb);}
   else if(s.bul)s.bul.splice(i+1,0,0);s.pts.splice(i+1,0,p);s.rad&&s.rad.splice(i+1,0,0);}
 function delPt(s,i){if(s.pts.length<=(s.closed?3:2)){toast('これ以上は点を減らせません');return;}saveUndo();rmPt(s,i);hiPt=-1;commit();toast(`点${i+1}を削除しました`);}
-function rectToCircle(s){saveUndo();const d=Math.min(s.w,s.h),cx=s.x+s.w/2,cy=s.y+s.h/2;
+function toHorizCyl(s,ax){saveUndo();const D=Math.min(ax==='y'?s.w:s.h,s.tz||Infinity);
+  if(ax==='y'){const c=s.x+s.w/2;s.x=r1(c-D/2);s.w=r1(D);}else{const c=s.y+s.h/2;s.y=r1(c-D/2);s.h=r1(D);}
+  s.tz=r1(D);s.hc=ax;delete s.rad;commit();}
+function fromHorizCyl(s){saveUndo();delete s.hc;commit();}
+function rectToCircle(s){saveUndo();delete s.hc;const d=Math.min(s.w,s.h),cx=s.x+s.w/2,cy=s.y+s.h/2;
   delete s.x;delete s.y;delete s.w;delete s.h;delete s.rad;s.type='circle';s.cx=r1(cx);s.cy=r1(cy);s.r=r1(d/2);commit();}
 function circleToRect(s){saveUndo();const d=s.r*2,cx=s.cx,cy=s.cy;
   delete s.cx;delete s.cy;delete s.r;s.type='rect';s.x=r1(cx-d/2);s.y=r1(cy-d/2);s.w=r1(d);s.h=r1(d);commit();}
@@ -715,10 +721,13 @@ function openCtx(sx,sy){const w=toW(sx,sy),g=grabAt(w,10/view.s),items=[];
     if(s.type==='poly'&&g.kind==='edge'&&s.bul&&s.bul[g.i])items.push(['円弧を反対側にふくらませる',()=>{saveUndo();s.bul[g.i]=-s.bul[g.i];commit();}],['円弧を直線に戻す',()=>{saveUndo();s.bul[g.i]=0;commit();}]);
     if(s.type==='poly'&&g.kind==='edge')items.push(['ここに点を追加',()=>{saveUndo();insPt(s,g.i,snapAt(sx,sy,s.id));commit();}]);
     if(VW==='top'){
+      if(s.type==='rect'&&s.hc)items.push(['横向き円柱を四角（箱）に戻す',()=>fromHorizCyl(s)]);
       if(s.type==='rect')items.push(['円に変換（短い辺＝直径）',()=>rectToCircle(s)]);
       if(s.type==='circle')items.push(['四角に変換（直径＝一辺）',()=>circleToRect(s)]);}
     else{const ro=REAL&&REAL.find(o=>o.id===s.id);
-      if(ro&&ro.type==='rect')items.push(['円柱に変換（短い辺＝直径）',()=>convInSide(s.id,rectToCircle)]);
+      const ax=VIEWS[VW].ax===0?'y':'x';
+      if(ro&&ro.type==='rect'&&!ro.hc)items.push(['この向きで円に変換（横向き円柱）',()=>convInSide(s.id,t=>toHorizCyl(t,ax))]);
+      if(ro&&ro.type==='rect'&&ro.hc)items.push(['横向き円柱を四角（箱）に戻す',()=>convInSide(s.id,fromHorizCyl)]);
       if(ro&&ro.type==='circle')items.push(['四角柱に変換（直径＝一辺）',()=>convInSide(s.id,circleToRect)]);}
     if(s.grp)items.push(['グループ解除',()=>ungroup(s.grp)]);
     items.push(['左に90°回転',()=>rotSel(1)],['右に90°回転',()=>rotSel(-1)],['名前とサイズ…',()=>openDlg(s)],['複製',()=>{const b=$('#dup');b&&b.click();}],['図形を削除',delSel,1]);}
@@ -841,7 +850,7 @@ function doGroup(){const list=shapes.filter(s=>grpSel.has(s.id));if(list.length<
 function rotShape(s,c,dir){const Rt=p=>dir>0?[c[0]-(p[1]-c[1]),c[1]+(p[0]-c[0])]:[c[0]+(p[1]-c[1]),c[1]-(p[0]-c[0])],rp=(kx,ky)=>{const q=Rt([s[kx],s[ky]]);s[kx]=q[0];s[ky]=q[1];};
   if(s.type==='line'||s.type==='dim'||s.type==='arc'){rp('x1','y1');rp('x2','y2');if(s.type==='arc')rp('xm','ym');}
   else if(s.type==='circle')rp('cx','cy');else if(s.type==='text')rp('x','y');else if(s.type==='poly')s.pts=s.pts.map(Rt);
-  else if(s.type==='rect'){const q=Rt([s.x+s.w/2,s.y+s.h/2]);[s.w,s.h]=[s.h,s.w];s.x=q[0]-s.w/2;s.y=q[1]-s.h/2;}}
+  else if(s.type==='rect'){const q=Rt([s.x+s.w/2,s.y+s.h/2]);[s.w,s.h]=[s.h,s.w];s.x=q[0]-s.w/2;s.y=q[1]-s.h/2;if(s.hc)s.hc=s.hc==='x'?'y':'x';}}
 function rotSel(dir){const s=shapes.find(x=>x.id===sel);if(!s)return;const ms=s.grp?shapes.filter(x=>x.grp===s.grp):[s],b=bbox(ms),c=[(b[0]+b[2])/2,(b[1]+b[3])/2];
   saveUndo();ms.forEach(m=>rotShape(m,c,dir));commit();}
 function ungroup(gid){saveUndo();shapes.forEach(x=>{if(x.grp===gid)delete x.grp;});commit();toast('グループを解除しました');}
@@ -1283,7 +1292,7 @@ const VIEWS={front:{ax:0,sg:1,dep:c=>c[1]},back:{ax:0,sg:-1,dep:c=>-c[1]},right:
 function toProxies(){const V=VIEWS[VW];
   return REAL.filter(isSolid).map(o=>{const bb=bbox([o]),a0=bb[V.ax],a1=bb[V.ax+2],c=[(bb[0]+bb[2])/2,(bb[1]+bb[3])/2];
     const p={id:o.id,type:'rect',pv:1,x:V.sg>0?a0:-a1,y:o.z0||0,w:a1-a0,h:o.tz,label:o.label||o.name||''};
-    if(o.type==='circle')p.cyl=1;if(o.grp)p.grp=o.grp;return{d:V.dep(c),p};}).sort((a,b)=>b.d-a.d).map(e=>e.p);}
+    if(o.type==='circle')p.cyl=1;if(o.type==='rect'&&o.hc){p.hcA=o.hc;if(o.hc===(V.ax===0?'y':'x'))p.disc=1;}if(o.grp)p.grp=o.grp;return{d:V.dep(c),p};}).sort((a,b)=>b.d-a.d).map(e=>e.p);}
 function writeBack(){const V=VIEWS[VW],ax=V.ax,P=new Map(shapes.map(p=>[p.id,p])),R=[];
   const rng=p=>V.sg>0?[p.x,p.x+p.w]:[-(p.x+p.w),-p.x];
   for(const o of REAL){if(!isSolid(o)){R.push(o);continue;}const p=P.get(o.id);if(!p)continue;P.delete(o.id);
@@ -1356,6 +1365,7 @@ function render6(){
       for(const{s,u}of L){const rx=x0+u[0]*k,rw=(u[1]-u[0])*k,z0=s.z0||0,ry=zy(z0+s.tz),rhh=s.tz*k,nm=s.label||s.name||'';
         const ti=rw*(s.tp||0)/200;ctx.beginPath();ctx.moveTo(rx,ry+rhh);ctx.lineTo(rx+rw,ry+rhh);ctx.lineTo(rx+rw-ti,ry);ctx.lineTo(rx+ti,ry);ctx.closePath();
         ctx.fillStyle='#fff';ctx.fill();if(nm){ctx.fillStyle=C.block;ctx.fill();}ctx.strokeStyle=C.ink;ctx.lineWidth=1.5;ctx.stroke();
+        if(s.type==='rect'&&s.hc&&(s.hc==='y'?(ci===1||ci===3):(ci===0||ci===2))){ctx.beginPath();ctx.ellipse(rx+rw/2,ry+rhh/2,rw/2,rhh/2,0,0,T2);ctx.strokeStyle=C.ink;ctx.lineWidth=1.5;ctx.stroke();}
         if(s.type==='circle'){ctx.strokeStyle=C.muted;ctx.lineWidth=1;ctx.setLineDash([8,3,2,3]);ctx.beginPath();ctx.moveTo(rx+rw/2,ry-6);ctx.lineTo(rx+rw/2,ry+rhh+6);ctx.stroke();ctx.setLineDash([]);}
         ctx.textAlign='center';ctx.textBaseline='middle';const mx=rx+rw/2,my=ry+rhh/2,big=rhh>34;
         if(nm){ctx.font=`600 12px ${ff}`;if(ctx.measureText(nm).width<rw-4){ctx.fillStyle=C.ink;ctx.fillText(nm,mx,my-(big?7:0));}}
@@ -1389,6 +1399,12 @@ function build3(){const RS=realS(),F=[],L=[],T=[];let n=0,oi=0;
   const HOLES=RS.filter(isHole).map(ring3).filter(r=>r.length>2);
   for(const s of RS){
     if(isHole(s))continue;
+    if(isSolid(s)&&s.type==='rect'&&s.hc&&!(s.rad>0)){const f0=F.length,ns=48,ay=s.hc==='y',z0=s.z0||0,nm=s.label||s.name||'',col=nm?PAL[n++%PAL.length]:'#cfd6dc';
+      const c1=ay?s.x+s.w/2:s.y+s.h/2,rc=(ay?s.w:s.h)/2,zc=z0+s.tz/2,rz=s.tz/2,a0=ay?s.y:s.x,a1=ay?s.y+s.h:s.x+s.w;
+      const Q=(t,a)=>{const u=c1+rc*Math.cos(t),z=zc+rz*Math.sin(t);return ay?[u,a,z]:[a,u,z];};
+      for(let i=0;i<ns;i++){const t0=i/ns*T2,t1=(i+1)/ns*T2;F.push({p:[Q(t0,a0),Q(t1,a0),Q(t1,a1),Q(t0,a1)],c:col,ed:[1,0,1,0]});}
+      F.push({p:Array.from({length:ns},(_,i)=>Q(i/ns*T2,a0)),c:col});F.push({p:Array.from({length:ns},(_,i)=>Q(i/ns*T2,a1)),c:col});
+      if(nm)T.push({p:[s.x+s.w/2,s.y+s.h/2,z0+s.tz],t:nm});for(let q=f0;q<F.length;q++)F[q].o=oi;oi++;continue;}
     if(isSolid(s)){const f0=F.length,B=ring3(s),m=B.length;if(m<2)continue;
       const bb=bbox([s]),cx=(bb[0]+bb[2])/2,cy=(bb[1]+bb[3])/2,f=1-(s.tp||0)/100,z0=s.z0||0,z1=z0+s.tz,nm=s.label||s.name||'';
       const Tp=B.map(p=>[cx+(p[0]-cx)*f,cy+(p[1]-cy)*f]),col=nm?PAL[n++%PAL.length]:'#cfd6dc',closed=s.type!=='poly'||s.closed;
