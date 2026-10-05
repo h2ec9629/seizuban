@@ -494,7 +494,8 @@ function drawShape(s,col,selected){
   if(s.type==='line'){const a=toS(s.x1,s.y1),b=toS(s.x2,s.y2);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke();}
   else if(s.type==='rect'){const a=toS(s.x,s.y+s.h);const w=s.w*view.s,h=s.h*view.s;
     if(s.rad>0)drawPath(outline(s),true,!!s.label);
-    else{if(s.pv){ctx.fillStyle=C.paper;ctx.fillRect(a[0],a[1],w,h);}if(s.label){ctx.fillStyle=C.block;ctx.fillRect(a[0],a[1],w,h);}ctx.fillStyle=col;ctx.strokeRect(a[0],a[1],w,h);
+    else{const dsc=()=>{ctx.beginPath();ctx.ellipse(a[0]+w/2,a[1]+h/2,Math.abs(w)/2,Math.abs(h)/2,0,0,T2);};
+      if(s.pv){ctx.fillStyle=C.paper;if(s.disc){dsc();ctx.fill();}else ctx.fillRect(a[0],a[1],w,h);}if(s.label){ctx.fillStyle=C.block;if(s.disc){dsc();ctx.fill();}else ctx.fillRect(a[0],a[1],w,h);}ctx.fillStyle=col;if(!s.disc)ctx.strokeRect(a[0],a[1],w,h);
       if(s.disc){ctx.save();ctx.lineWidth=selected?2.5:1.5;ctx.beginPath();ctx.ellipse(a[0]+w/2,a[1]+h/2,Math.abs(w)/2,Math.abs(h)/2,0,0,T2);ctx.stroke();ctx.restore();}
       if(s.hc&&!s.pv){ctx.save();ctx.lineWidth=1;ctx.setLineDash([8,3,2,3]);ctx.beginPath();if(s.hc==='y'){ctx.moveTo(a[0]+w/2,a[1]-6);ctx.lineTo(a[0]+w/2,a[1]+h+6);}else{ctx.moveTo(a[0]-6,a[1]+h/2);ctx.lineTo(a[0]+w+6,a[1]+h/2);}ctx.stroke();ctx.restore();}
       if(s.cyl){ctx.save();ctx.lineWidth=1;ctx.setLineDash([8,3,2,3]);ctx.beginPath();ctx.moveTo(a[0]+w/2,a[1]-6);ctx.lineTo(a[0]+w/2,a[1]+h+6);ctx.stroke();ctx.restore();}}
