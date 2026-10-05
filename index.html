@@ -1323,7 +1323,31 @@ function setView(v){if(v===VW)return;temp=null;
   document.querySelectorAll('.tool[data-tool]').forEach(b=>b.disabled=VW!=='top'&&!SIDE_TOOLS.includes(b.dataset.tool));
   renderPanel();fit();
   if(VW!=='top')toast(shapes.length?'箱をドラッグで移動、角や辺で幅・高さを変えられます':'「立体の高さ」が入った図形がありません。ここで四角を描くと箱として追加されます');}
-$('#vwSel').onchange=e=>setView(e.target.value);
+/* 向きを切り替えるときの動き：3D描画で「今の向き→新しい向き」へカメラを回してから切り替える */
+let vAnim=null;
+const VCAM=v=>v==='top'?[0,89.9]:v==='front'?[0,0]:v==='right'?[-90,0]:v==='back'?[180,0]:[90,0];
+function setViewAnim(v){
+  if(vAnim){vAnim.done();}
+  if(v===VW)return;
+  const reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let m=null;try{m=build3();}catch(_){}
+  if(reduce||!m||v3){setView(v);return;}
+  const st=$('#stage'),oc=document.createElement('canvas'),r=st.getBoundingClientRect(),d=window.devicePixelRatio||1;
+  oc.width=Math.round(r.width*d);oc.height=Math.round(r.height*d);
+  oc.style.cssText='position:absolute;inset:0;width:100%;height:100%;z-index:8;opacity:0;transition:opacity .15s';
+  const lum=(c=>{const n=parseInt((c||'#fff').replace('#','').padEnd(6,'f').slice(0,6),16);return((n>>16)*.3+(n>>8&255)*.59+(n&255)*.11);})(C.paper);
+  if(lum<110)oc.style.filter='invert(1) hue-rotate(180deg)';
+  st.appendChild(oc);
+  const A=VCAM(VW),B=VCAM(v),dy=((B[0]-A[0]+540)%360)-180,T0=performance.now(),DUR=700,saved=v3;
+  const state={g:oc.getContext('2d'),W:r.width,H:r.height,dpr:d,m,yaw:A[0],pit:A[1],zoom:1,ptr:new Map(),pd:0,xr:false};
+  let raf=0,fin=false;
+  const frame=()=>{const t=Math.min(1,(performance.now()-T0)/DUR),k=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+    state.yaw=A[0]+dy*k;state.pit=A[1]+(B[1]-A[1])*k;v3=state;try{draw3();}finally{v3=saved;}
+    oc.style.opacity='1';
+    if(t<1)raf=requestAnimationFrame(frame);else done();};
+  function done(){if(fin)return;fin=true;cancelAnimationFrame(raf);vAnim=null;setView(v);oc.style.opacity='0';setTimeout(()=>oc.remove(),180);}
+  vAnim={done};$('#vwSel').value=v;raf=requestAnimationFrame(frame);}
+$('#vwSel').onchange=e=>setViewAnim(e.target.value);
 
 /* ---------- 6面図（第三角法） ---------- */
 const isSolid=s=>!s.hole&&s.name!=='穴'&&(s.type==='rect'||s.type==='circle'||s.type==='poly')&&(s.tz||0)>0;
