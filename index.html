@@ -703,12 +703,18 @@ function rmPt(s,i){s.pts.splice(i,1);s.rad&&s.rad.splice(i,1);if(s.bul){s.bul.sp
 function insPt(s,i,p){const b=(s.bul||[])[i];if(b){const e=bulEl(s.pts[i],s.pts[(i+1)%s.pts.length],b),m=e.s+nang(e.e-e.s)/2,hb=Math.tan(Math.atan(b)/2);p=[e.c[0]+e.r*Math.cos(m),e.c[1]+e.r*Math.sin(m)];s.bul.splice(i,1,hb,hb);}
   else if(s.bul)s.bul.splice(i+1,0,0);s.pts.splice(i+1,0,p);s.rad&&s.rad.splice(i+1,0,0);}
 function delPt(s,i){if(s.pts.length<=(s.closed?3:2)){toast('これ以上は点を減らせません');return;}saveUndo();rmPt(s,i);hiPt=-1;commit();toast(`点${i+1}を削除しました`);}
+function rectToCircle(s){saveUndo();const d=Math.min(s.w,s.h),cx=s.x+s.w/2,cy=s.y+s.h/2;
+  delete s.x;delete s.y;delete s.w;delete s.h;delete s.rad;s.type='circle';s.cx=r1(cx);s.cy=r1(cy);s.r=r1(d/2);commit();}
+function circleToRect(s){saveUndo();const d=s.r*2,cx=s.cx,cy=s.cy;
+  delete s.cx;delete s.cy;delete s.r;s.type='rect';s.x=r1(cx-d/2);s.y=r1(cy-d/2);s.w=r1(d);s.h=r1(d);commit();}
 function openCtx(sx,sy){const w=toW(sx,sy),g=grabAt(w,10/view.s),items=[];
   if(g){const s=g.s;if(s.id!==sel){hiPt=-1;hiPt2=-1;}sel=s.id;renderPanel();
     if(s.type==='poly'&&g.kind==='vert'){if(hiPt>=0&&hiPt!==g.i)hiPt2=g.i;else{hiPt=g.i;hiPt2=-1;}items.push([`点${g.i+1}を削除`,()=>delPt(s,g.i),1]);}
     if(s.type==='poly'&&hiPt>=0&&hiPt2>=0&&hiPt!==hiPt2&&hiPt<s.pts.length&&hiPt2<s.pts.length){const a=hiPt,b=hiPt2;items.unshift([`点${a+1}〜点${b+1}を円弧にする`,()=>toArc(s,a,b)]);}
     if(s.type==='poly'&&g.kind==='edge'&&s.bul&&s.bul[g.i])items.push(['円弧を反対側にふくらませる',()=>{saveUndo();s.bul[g.i]=-s.bul[g.i];commit();}],['円弧を直線に戻す',()=>{saveUndo();s.bul[g.i]=0;commit();}]);
     if(s.type==='poly'&&g.kind==='edge')items.push(['ここに点を追加',()=>{saveUndo();insPt(s,g.i,snapAt(sx,sy,s.id));commit();}]);
+    if(s.type==='rect'&&VW==='top')items.push(['円に変換（短い辺＝直径）',()=>rectToCircle(s)]);
+    if(s.type==='circle'&&VW==='top')items.push(['四角に変換（直径＝一辺）',()=>circleToRect(s)]);
     if(s.grp)items.push(['グループ解除',()=>ungroup(s.grp)]);
     items.push(['左に90°回転',()=>rotSel(1)],['右に90°回転',()=>rotSel(-1)],['名前とサイズ…',()=>openDlg(s)],['複製',()=>{const b=$('#dup');b&&b.click();}],['図形を削除',delSel,1]);}
   else items.push(['全体表示',fit]);
