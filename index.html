@@ -301,7 +301,7 @@ const HINTS={
   focus:'取り出したい物を、まわりの背景が少し入るようにドラッグで囲む',
   calib:'下絵の上で、長さが分かっている2点をタップ（例：部品の端から端）',
   bgmove:'ドラッグで下絵の位置を動かす。終わったら「選択」に戻してください',
-  select:'何もない所をドラッグ=画面移動／中をドラッグ=移動／角□=比率そのままサイズ変更（Shift押しで比率無視）／辺=辺だけ移動。Shift=角度15°刻み Ctrl=中心基準・凸凹押し出し Alt=吸着なし',
+  select:'まずクリックで選択→選んだ図形の中をドラッグ=移動／選んでない図形や何もない所のドラッグ=画面移動／角□=比率そのままサイズ変更（Shift押しで比率無視）／辺=辺だけ移動。Shift=角度15°刻み Ctrl=中心基準・凸凹押し出し Alt=吸着なし',
   arc:'始点をタップ → 終点をタップ → ふくらませたい位置をタップ',
   poly:'点を順にタップ。最初の点で閉じる／最後の点をもう一度タップかEnterで終了',
   line:'始点をタップ → 終点をタップ（ドラッグでもOK）',
@@ -761,7 +761,7 @@ async function doCut(){const list=cutSel.map(id=>shapes.find(x=>x.id===id)).filt
   const holes=made.filter(m=>m.name==='穴').length;toast(holes?`くり抜きました（中の穴 ${holes}個はグループでまとめてあります）`:'くり抜きました（戻すで元に戻せます）');}
 $('#cutGo').onclick=doCut;
 const HELP={
-  select:{t:'選択・移動',l:['図形をタップで選択、<b>中をドラッグ</b>で移動','<b>角□</b>をドラッグでサイズ変更（四角は比率キープ、<b>Shift</b>で自由）','<b>辺</b>をドラッグでその辺だけ移動','何もない所をドラッグで画面移動','<b>ダブルクリック</b>で名前とサイズ、<b>右クリック</b>でメニュー']},
+  select:{t:'選択・移動',l:['図形を<b>クリックで選択</b>、選んだ図形の<b>中をドラッグ</b>で移動','<b>角□</b>をドラッグでサイズ変更（四角は比率キープ、<b>Shift</b>で自由）','<b>辺</b>をドラッグでその辺だけ移動','選んでない図形や何もない所をドラッグで画面移動','<b>ダブルクリック</b>で名前とサイズ、<b>右クリック</b>でメニュー']},
   line:{t:'線',l:['始点をタップ → 終点をタップ（ドラッグでもOK）','<b>Shift</b>で15°刻み','置いたら自動で選択に戻ります']},
   rect:{t:'四角',l:['角をタップ → 反対の角をタップ','<b>名前</b>を付けると設備ブロック（配置図用）','右の欄で<b>角R</b>も付けられます']},
   circle:{t:'円',l:['中心をタップ → 半径の位置をタップ','大きさは直径<b>Φ</b>で表示されます']},
@@ -867,6 +867,8 @@ cv.addEventListener('pointerdown',e=>{setM(e);
       if(g.kind==='vert'&&s.pts.length>(s.closed?3:2)){saveUndo();rmPt(s,g.i);commit();return;}
       if(g.kind==='edge'){saveUndo();insPt(s,g.i,snapAt(sx,sy,s.id));commit();return;}}
     if(dbl&&g){sel=g.s.id;renderPanel();draw();openDlg(g.s);return;}
+    const ps=sel!=null?shapes.find(x=>x.id===sel):null,held=g&&ps&&(g.s.id===ps.id||(g.s.grp&&g.s.grp===ps.grp));
+    if(g&&!held){hiPt=-1;hiPt2=-1;panDrag={sx,sy,ox:view.ox,oy:view.oy,pick:g.s.id};cv.style.cursor='grabbing';draw();return;}
     sel=g?g.s.id:null;renderPanel();
     if(M.shift&&g&&g.kind==='vert'&&g.s.type==='poly'&&g.s.id===sel&&hiPt>=0&&g.i!==hiPt)hiPt2=g.i;
     else{hiPt=(g&&g.kind==='vert'&&/^(poly|line|dim|arc)$/.test(g.s.type))?g.i:-1;hiPt2=-1;}
@@ -914,7 +916,7 @@ cv.addEventListener('pointermove',e=>{setM(e);
     else if(drag.kind==='edge')applyEdge(s,drag.orig,drag.i,dx,dy);
     else{moveShape(s,drag.orig,dx,dy);for(const[m,o]of drag.mem||[])moveShape(m,o,dx,dy);}
     livePanel(s);draw();return;}
-  if(tool==='select'){const g=grabAt(w,10/view.s);cv.style.cursor=!g?'default':g.kind==='vert'?'crosshair':g.kind==='edge'?'grab':'move';if(snapMark){snapMark=null;draw();}return;}
+  if(tool==='select'){const g=grabAt(w,10/view.s),ps=sel!=null?shapes.find(x=>x.id===sel):null,held=g&&ps&&(g.s.id===ps.id||(g.s.grp&&g.s.grp===ps.grp));cv.style.cursor=!g?'default':!held?'pointer':g.kind==='vert'?'crosshair':g.kind==='edge'?'grab':'move';if(snapMark){snapMark=null;draw();}return;}
   if(tool==='pan'||tool==='bgmove'||tool==='persp')return;
   if(temp&&temp.type==='calib'&&!$('#cal').hidden)return;
   const p=snapAt(sx,sy);if(temp&&(temp.type==='calib'||temp.type==='focus'))temp.cur=toW(sx,sy);else if(temp&&temp.type==='arc')temp.cur=p;else if(temp&&temp.pts)temp.cur=ortho(temp.pts.at(-1),p,M.shift);else if(temp)temp.p2=ortho(temp.p1,p,M.shift);
@@ -924,7 +926,7 @@ cv.addEventListener('pointermove',e=>{setM(e);
 function up(e){
   const[sx,sy]=pos(e);pointers.delete(e.pointerId);
   if(pinch){if(pointers.size<2)pinch=null;return;}
-  if(panDrag){const pd=panDrag;panDrag=null;setTool(tool);if(pd.right&&Math.hypot(sx-pd.sx,sy-pd.sy)<5)openCtx(sx,sy);return;}
+  if(panDrag){const pd=panDrag;panDrag=null;setTool(tool);if(pd.pick!=null&&Math.hypot(sx-pd.sx,sy-pd.sy)<5){sel=pd.pick;hiPt=-1;hiPt2=-1;renderPanel();draw();}if(pd.right&&Math.hypot(sx-pd.sx,sy-pd.sy)<5)openCtx(sx,sy);return;}
   if(bgDrag){bgDrag=null;storeBg();return;}
   if(temp&&temp.type==='focus'){const t=temp;temp=null;draw();openExtract(t.a,t.cur);return;}
   if(drag){if(drag.moved){undoS.push(drag.before);redoS=[];commit();}else draw();drag=null;return;}
