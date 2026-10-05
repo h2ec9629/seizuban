@@ -1402,7 +1402,7 @@ function setOrient(Rb){
   const frame=()=>{if(fin)return;const t=Math.min(1,(performance.now()-T0)/DUR),e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
     state.R=mmul(rodrigues(ax,ang*e),Ra);
     v3=state;try{draw3();}finally{v3=saved;}
-    if(t<1)raf=requestAnimationFrame(frame);else hold=setTimeout(done,500);};
+    if(t<1)raf=requestAnimationFrame(frame);else hold=setTimeout(done,200);};
   function done(){if(fin)return;fin=true;cancelAnimationFrame(raf);clearTimeout(hold);vAnim=null;oc.style.opacity='0';setTimeout(()=>oc.remove(),180);}
   vAnim={done};frame();}
 $('#vwSel').onchange=e=>{const R=R_STD[e.target.value];if(R)setOrient(R);else $('#vwSel').value=oriInfo(ORI).name||'free';};
