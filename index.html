@@ -166,6 +166,7 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
           <label class="fname">図面名（保存するファイル名）<input id="fname" type="text" placeholder="例：第1工場 配置図" autocomplete="off"></label>
           <button id="saveJson">図面を保存 (.json)</button>
           <button id="openJson">図面を開く (.json)</button>
+          <button id="addJson" title="保存してある図面を、今の図の右隣に足します（今の図は消えません）">保存した図を今の図に足す (.json)</button>
           <button id="sendClaude">Claudeに送る（図面PDF・イラスト）</button>
           <button id="askClaude">Claudeに頼む（チャットを開く）</button>
           <button id="copyClaude">今の図をClaudeに渡す（コピー）</button>
@@ -179,7 +180,7 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
           <small>描いた図はこの端末のブラウザに自動保存されます。書き出しが始まらない時は「コピー」を使ってください。</small>
         </div>
       </details>
-      <input type="file" id="fileIn" accept=".json,application/json" hidden><input type="file" id="sndIn" accept="image/*,application/pdf,.pdf" multiple hidden>
+      <input type="file" id="fileIn" accept=".json,application/json" hidden><input type="file" id="addIn" accept=".json,application/json" hidden><input type="file" id="sndIn" accept="image/*,application/pdf,.pdf" multiple hidden>
       <input type="file" id="bgIn" accept="image/*" hidden>
     </div>
   </header>
@@ -1200,6 +1201,7 @@ async function saveFile(ext,text,mime,desc,sfx=''){const name=`${baseName()}${sf
   download(name,text,mime);}
 $('#saveJson').onclick=()=>saveFile('json',JSON.stringify({app:'kantan-cad',v:1,name:docName,nextId,shapes:realS(),bg},null,1),'application/json','製図板の図面');
 $('#openJson').onclick=()=>$('#fileIn').click();
+$('#addJson').onclick=()=>$('#addIn').click();
 /* Claudeがチャットで出した図面データ（JSON）を貼り付けて取り込む。```json の囲みや前後の説明文があってもOK */
 const N3=v=>{const n=+v;return isFinite(n)?n:0;};
 function parseDrawing(t){t=String(t||'');const i=t.search(/[\[{]/);if(i<0)throw 0;const ob=t[i],cb=ob==='{'?'}':']',j=t.lastIndexOf(cb);if(j<i)throw 0;
@@ -1269,6 +1271,17 @@ $('#fileIn').onchange=e=>{const f=e.target.files[0];if(!f)return;setView('top');
   rd.onload=()=>{try{const d=JSON.parse(rd.result);if(!Array.isArray(d.shapes))throw 0;saveUndo();docName=d.name||f.name.replace(/\.json$/i,'');$('#fname').value=docName;shapes=d.shapes;nextId=Math.max(d.nextId||0,...shapes.map(s=>s.id+1),1);sel=null;setBg(d.bg||null);commit();fit();toast(`${f.name} を開きました`);}
     catch(err){toast('開けませんでした。このアプリで保存した .json を選んでください');}};
   rd.readAsText(f);e.target.value='';$('#fileMenu').open=false;};
+/* 保存した図面(.json)を、今の図を消さずに右隣へ足す。足した図は1グループ（まとめて動かせる）。下絵の写真は取り込まない */
+$('#addIn').onchange=e=>{const f=e.target.files[0];e.target.value='';$('#fileMenu').open=false;if(!f)return;const rd=new FileReader();
+  rd.onload=()=>{let r;try{r=parseDrawing(rd.result);}catch(err){toast('足せませんでした。このアプリで保存した .json を選んでください');return;}
+    setView('top');saveUndo();
+    const cur=shapes.length?bbox(shapes):null,nb=bbox(r.shapes),gk='a'+Date.now().toString(36);let dx=0,dy=0;
+    if(cur&&nb){const gap=Math.max(20,Math.max(cur[2]-cur[0],cur[3]-cur[1])*0.05);dx=cur[2]+gap-nb[0];dy=cur[1]-nb[1];}
+    const one=r.shapes.length>1&&!r.shapes.some(s=>s.grp);
+    const list=r.shapes.map(s=>{const c={...s,id:nextId++};if(c.grp)c.grp=gk+c.grp;else if(one)c.grp=gk;if(dx||dy)moveShape(c,s,dx,dy);return c;});
+    shapes.push(...list);sel=list[0].id;commit();fit();
+    toast(`${f.name} の図形${list.length}個を足しました${r.bad.length?`（読めない図形 ${r.bad.length}個は飛ばしました）`:''}。おかしければ「戻す」で元通り`);};
+  rd.readAsText(f);};
 function toDXF(){
   const L=[],f=n=>(Math.round(n*1000)/1000).toString(),add=(...a)=>L.push(...a.map(String));
   add(0,'SECTION',2,'HEADER',9,'$ACADVER',1,'AC1009',9,'$INSUNITS',70,4,0,'ENDSEC',0,'SECTION',2,'ENTITIES');
