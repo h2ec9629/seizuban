@@ -1231,11 +1231,11 @@ const CLAUDE_PROJECT='https://claude.ai/project/01a0fb3c-b9af-71b9-8c46-cdd0cc59
 $('#askClaude').onclick=()=>{$('#fileMenu').open=false;window.open(CLAUDE_PROJECT,'_blank','noopener');};
 $('#copyClaude').onclick=()=>{$('#fileMenu').open=false;const RS=realS();if(!RS.length){toast('図が空です');return;}
   const data=JSON.stringify({name:docName||'',shapes:RS.map(({id,pv,...o})=>o)});
-  const t=`お子様製図板の今の図面データです（書き方はプロジェクト資料 seizuban-format.md の通り）。\n下の依頼どおりに直して、図面データ全体を同じ形式で返してください。\n\n\`\`\`json\n${data}\n\`\`\`\n\n依頼：`;
+  const t=`DELAYED OLD MAN'S BOARDの今の図面データです（書き方はプロジェクト資料 seizuban-format.md の通り）。\n下の依頼どおりに直して、図面データ全体を同じ形式で返してください。\n\n\`\`\`json\n${data}\n\`\`\`\n\n依頼：`;
   const fallback=()=>{sel=null;renderPanel();side.insertAdjacentHTML('beforeend',`<textarea id="dxfTa" readonly aria-label="Claudeに渡すデータ"></textarea>`);const ta=$('#dxfTa');ta.value=t;ta.focus();ta.select();toast('下の欄を全選択してコピーしてください');};
   try{navigator.clipboard.writeText(t).then(()=>toast('コピーしました。チャットに貼って「依頼：」の後にやってほしいことを書いてください'),fallback);}catch(e){fallback();}};
 /* 図面PDF・イラストを共有画面からClaudeのアプリに渡す。プロジェクト外のチャットでも形が崩れないよう書き方の要約を同梱 */
-const SND_SPEC=`お子様製図板（自作の2D CAD）に取り込むので、添付の図面を図面データ(JSON)にしてください。
+const SND_SPEC=`DELAYED OLD MAN'S BOARD（自作の2D CAD）に取り込むので、添付の図面を図面データ(JSON)にしてください。
 返すのは \`\`\`json のコードブロック1つだけ。単位mm、Xは右が+、Yは上が+。
 形式：{"name":"図面名","shapes":[ 図形… ]}
 図形：
