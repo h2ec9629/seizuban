@@ -511,7 +511,10 @@ function labA(e){const m=e.s+(nang(e.e-e.s)||T2)/2,S=toS(e.c[0]+e.r*Math.cos(m),
 function drawLabels(list=shapes){for(const s of list){
   if(s.type==='line')labL([s.x1,s.y1],[s.x2,s.y2]);
   else if(s.type==='rect'){const E=outline(s);if(!s.label)E.filter(e=>e.t==='L').slice(0,2).forEach(e=>labL(e.a,e.b));const a=E.find(e=>e.t==='A');if(a)labA(a);}
-  else if(s.type==='poly')outline(s).forEach(e=>e.t==='L'?labL(e.a,e.b):labA(e));
+  else if(s.type==='poly'){const E=outline(s),a0=E[0],tol=1e-6*Math.max(1,a0&&a0.r||1);
+    /* 円弧だけで同じ中心・同じ半径に閉じている形（くり抜きの穴など）は、円と同じ Φ表示にする */
+    if(s.closed&&E.length&&E.every(e=>e.t==='A'&&Math.hypot(e.c[0]-a0.c[0],e.c[1]-a0.c[1])<tol&&Math.abs(e.r-a0.r)<tol)){const S=toS(a0.c[0],a0.c[1]+a0.r);lab('Φ'+fmt(a0.r*2),S[0],S[1]-12);}
+    else E.forEach(e=>e.t==='L'?labL(e.a,e.b):labA(e));}
   else if(s.type==='arc'){const e=arcEl(s);e.t==='A'?labA(e):labL(e.a,e.b);}
   else if(s.type==='circle'){const S=toS(s.cx,s.cy+s.r);lab('Φ'+fmt(s.r*2),S[0],S[1]-12);}}}
 function drawShape(s,col,selected){
