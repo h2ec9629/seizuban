@@ -1,4 +1,4 @@
-# お子様製図板
+# DOB（Delayed Old Man's Board）
 
 加工図や工場の配置図をサクッと描ける、ブラウザで動くかんたん2D CADです。
 

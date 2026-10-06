@@ -1,13 +1,13 @@
 {
-  "name": "お子様製図板",
-  "short_name": "製図板",
+  "name": "DOB",
+  "short_name": "DOB",
   "description": "加工図と工場の配置図をサクッと描ける、かんたん2D CAD",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#e7ebe8",
-  "theme_color": "#1d2b36",
+  "background_color": "#0d1217",
+  "theme_color": "#0d1217",
   "icons": [
     {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
     {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},

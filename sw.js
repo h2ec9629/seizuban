@@ -1,6 +1,6 @@
-// お子様製図板：オフラインでも開けるようにする仕掛け
+// DOB：オフラインでも開けるようにする仕掛け
 // ネットにつながる時は常に最新版を取りに行き、つながらない時は前に保存した版を使う
-const CACHE = 'seizuban-v2';
+const CACHE = 'seizuban-v3';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon.ico'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
