@@ -167,6 +167,8 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
           <button id="saveJson">図面を保存 (.json)</button>
           <button id="openJson">図面を開く (.json)</button>
           <button id="addJson" title="保存してある図面を、今の図の右隣に足します（今の図は消えません）">保存した図を今の図に足す (.json)</button>
+          <button id="openDxf" title="DXFファイルを開きます（今の図は置き換わります。「戻す」で元に戻せます）">DXFを開く (.dxf)</button>
+          <button id="addDxf" title="DXFファイルを、今の図の右隣に足します（今の図は消えません）">DXFを今の図に足す (.dxf)</button>
           <button id="sendClaude">Claudeに送る（図面PDF・イラスト）</button>
           <button id="askClaude">Claudeに頼む（チャットを開く）</button>
           <button id="copyClaude">今の図をClaudeに渡す（コピー）</button>
@@ -181,7 +183,7 @@ textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;back
         </div>
       </details>
       <input type="file" id="fileIn" accept=".json,application/json" hidden><input type="file" id="addIn" accept=".json,application/json" hidden><input type="file" id="sndIn" accept="image/*,application/pdf,.pdf" multiple hidden>
-      <input type="file" id="bgIn" accept="image/*" hidden>
+      <input type="file" id="bgIn" accept="image/*" hidden><input type="file" id="dxfIn" accept=".dxf" hidden>
     </div>
   </header>
 
@@ -1288,6 +1290,113 @@ $('#addIn').onchange=e=>{const f=e.target.files[0];e.target.value='';$('#fileMen
     shapes.push(...list);sel=list[0].id;commit();fit();
     toast(`${f.name} の図形${list.length}個を足しました${r.bad.length?`（読めない図形 ${r.bad.length}個は飛ばしました）`:''}。おかしければ「戻す」で元通り`);};
   rd.readAsText(f);};
+/* ---------- DXF読み込み（ASCII形式）。対応：LINE／CIRCLE／ARC／LWPOLYLINE／POLYLINE／ELLIPSE／SPLINE／TEXT／MTEXT／SOLID／INSERT／DIMENSION ----------
+   ・単位は $INSUNITS を見て mm に直す（書いてなければ mm とみなす）　・図層は無視　・文字の回転は無視（水平になる）
+   ・HATCH など未対応の図形は飛ばして、飛ばした数を知らせる　・Shift-JIS（JW_CADなど）のDXFも読める */
+const DXF_UNITS={1:25.4,2:304.8,4:1,5:10,6:1000,10:914.4,14:100};
+function decodeDXF(buf){
+  const u8=new Uint8Array(buf),lat=new TextDecoder('latin1');
+  if(lat.decode(u8.subarray(0,18))==='AutoCAD Binary DXF')throw new Error('binary');
+  const cp=/\$DWGCODEPAGE\s+3\s+(\S+)/.exec(lat.decode(u8.subarray(0,Math.min(u8.length,20000)))),sj=!!(cp&&/932|SJIS|JIS/i.test(cp[1]));
+  try{return new TextDecoder(sj?'shift_jis':'utf-8',{fatal:true}).decode(u8);}
+  catch(e){return new TextDecoder(sj?'utf-8':'shift_jis').decode(u8);}
+}
+function parseDXF(buf){
+  const a=decodeDXF(buf).split(/\r\n|\r|\n/),P=[];
+  for(let i=0;i+1<a.length;i+=2){const c=parseInt(a[i],10);if(isFinite(c))P.push([c,a[i+1]]);}
+  const sec={HEADER:[],BLOCKS:[],ENTITIES:[]},hdr={};let cs=null,cur=null,hv=null;
+  for(const[c,v]of P){
+    if(c===0){const t=v.trim();if(t==='SECTION'){cs='?';cur=null;continue;}if(t==='ENDSEC'){cs=null;cur=null;continue;}if(t==='EOF')break;
+      cur={t,g:[]};if(sec[cs])sec[cs].push(cur);continue;}
+    if(cs==='?'&&c===2){cs=v.trim();continue;}
+    if(cs==='HEADER'){if(c===9)hv=v.trim();else if(hv&&!(hv in hdr))hdr[hv]=v.trim();continue;}
+    if(cur)cur.g.push([c,v]);}
+  const G=(e,c,d)=>{for(const x of e.g)if(x[0]===c)return x[1];return d;},
+    GN=(e,c,d=0)=>{const v=G(e,c);const n=v===undefined?NaN:parseFloat(v);return isFinite(n)?n:d;},
+    GA=(e,c)=>e.g.filter(x=>x[0]===c).map(x=>parseFloat(x[1])),
+    XY=(e,cx,cy)=>{const p=[];for(const[c,v]of e.g){if(c===cx)p.push([parseFloat(v)||0,0]);else if(c===cy&&p.length)p[p.length-1][1]=parseFloat(v)||0;}return p;};
+  const blocks={};let bk=null;
+  for(const e of sec.BLOCKS){if(e.t==='BLOCK'){bk={base:[GN(e,10),GN(e,20)],list:[]};blocks[String(G(e,2,'')).trim()]=bk;}else if(e.t==='ENDBLK')bk=null;else if(bk)bk.list.push(e);}
+  const k=DXF_UNITS[parseInt(hdr.$INSUNITS,10)]||1,out=[],sk={},PI=Math.PI;let inclPaper=false;
+  const cm=(M,N)=>[M[0]*N[0]+M[2]*N[1],M[1]*N[0]+M[3]*N[1],M[0]*N[2]+M[2]*N[3],M[1]*N[2]+M[3]*N[3],M[0]*N[4]+M[2]*N[5]+M[4],M[1]*N[4]+M[3]*N[5]+M[5]];
+  const r3=v=>Math.round(v*1000)/1000,TP=(M,x,y)=>[r3(M[0]*x+M[2]*y+M[4]),r3(M[1]*x+M[3]*y+M[5])];
+  const fixT=s=>String(s).replace(/%%[cC]/g,'Φ').replace(/%%[dD]/g,'°').replace(/%%[pP]/g,'±').replace(/%%%/g,'%');
+  const fixM=s=>fixT(String(s).replace(/\\P/g,'\n').replace(/\\~/g,' ').replace(/\\U\+([0-9A-Fa-f]{4})/g,(_,h)=>String.fromCharCode(parseInt(h,16))).replace(/\\[fFcCHWQTAp][^;]*;/g,'').replace(/\\[LlOoKk]/g,'').replace(/[{}]/g,'').replace(/\\\\/g,'\\'));
+  const deBoor=(deg,kn,cp,x)=>{const n=cp.length;let s=deg;while(s<n-1&&x>=kn[s+1])s++;
+    const d=[];for(let j=0;j<=deg;j++)d.push(cp[j+s-deg].slice());
+    for(let r=1;r<=deg;r++)for(let j=deg;j>=r;j--){const den=kn[j+1+s-r]-kn[j+s-deg],al=den?(x-kn[j+s-deg])/den:0;d[j]=[(1-al)*d[j-1][0]+al*d[j][0],(1-al)*d[j-1][1]+al*d[j][1]];}
+    return d[deg];};
+  const emit=(list,M,d)=>{
+    if(d>8)return;
+    const det=M[0]*M[3]-M[1]*M[2],flip=det<0,sc=Math.sqrt(Math.abs(det))||1;
+    const poly=(pts,bul,closed)=>{if(pts.length<2)return;let b=bul&&bul.some(x=>x)?bul.map(x=>flip?-x:x):null;
+      if(closed&&pts.length<3){if(pts.length===2&&b){pts=[pts[0],pts[1],pts[0]];b=[b[0],b[1],0];}closed=false;}
+      const o={type:'poly',closed:!!closed,pts:pts.map(p=>TP(M,p[0],p[1]))};if(b)o.bul=b;out.push(o);};
+    const putText=(s,x,y,h)=>{if(String(s).trim()&&h>0)out.push({type:'text',x:r3(x),y:r3(y),text:s,size:r3(h)});};
+    for(let i=0;i<list.length;i++){
+      const e=list[i],t=e.t;
+      if(d===0&&!inclPaper&&GN(e,67)===1)continue;
+      if(t==='LINE'){const p=TP(M,GN(e,10),GN(e,20)),q=TP(M,GN(e,11),GN(e,21));if(p[0]!==q[0]||p[1]!==q[1])out.push({type:'line',x1:p[0],y1:p[1],x2:q[0],y2:q[1]});}
+      else if(t==='CIRCLE'){const c=TP(M,GN(e,10),GN(e,20)),r=GN(e,40)*sc;if(r>0)out.push({type:'circle',cx:c[0],cy:c[1],r:r3(r)});}
+      else if(t==='ARC'){const cx=GN(e,10),cy=GN(e,20),r=GN(e,40),s0=GN(e,50),e0=GN(e,51);let sw=e0-s0;if(sw<=0)sw+=360;
+        if(r>0){if(sw>359.99){const c=TP(M,cx,cy);out.push({type:'circle',cx:c[0],cy:c[1],r:r3(r*sc)});}
+          else{const pt=g=>TP(M,cx+r*Math.cos(g*PI/180),cy+r*Math.sin(g*PI/180)),p1=pt(s0),pm=pt(s0+sw/2),p2=pt(s0+sw);
+            out.push({type:'arc',x1:p1[0],y1:p1[1],xm:pm[0],ym:pm[1],x2:p2[0],y2:p2[1]});}}}
+      else if(t==='LWPOLYLINE'){const pts=[],bul=[];for(const[c,v]of e.g){if(c===10){pts.push([parseFloat(v)||0,0]);bul.push(0);}else if(c===20&&pts.length)pts[pts.length-1][1]=parseFloat(v)||0;else if(c===42&&pts.length)bul[pts.length-1]=parseFloat(v)||0;}
+        poly(pts,bul,GN(e,70)&1);}
+      else if(t==='POLYLINE'){let j=i+1;const pts=[],bul=[];
+        while(j<list.length&&list[j].t!=='SEQEND'){const v=list[j];if(v.t==='VERTEX'&&!(GN(v,70)&16)){pts.push([GN(v,10),GN(v,20)]);bul.push(GN(v,42));}j++;}
+        i=j;if(!(GN(e,70)&(16|32|64)))poly(pts,bul,GN(e,70)&1);else sk.POLYLINE=(sk.POLYLINE||0)+1;}
+      else if(t==='ELLIPSE'){const c=[GN(e,10),GN(e,20)],mx=GN(e,11),my=GN(e,21),ra=GN(e,40,1);let t0=GN(e,41,0),t1=GN(e,42,2*PI);if(t1<=t0)t1+=2*PI;
+        const full=t1-t0>2*PI-1e-6,n=Math.max(8,Math.round(64*(t1-t0)/(2*PI))),pts=[];
+        for(let q=0;q<=n-(full?1:0);q++){const u=t0+(t1-t0)*q/n;pts.push([c[0]+Math.cos(u)*mx-Math.sin(u)*ra*my,c[1]+Math.cos(u)*my+Math.sin(u)*ra*mx]);}
+        poly(pts,null,full);}
+      else if(t==='SPLINE'){const deg=GN(e,71,3),kn=GA(e,40),cp=XY(e,10,20),fit=XY(e,11,21),closed=GN(e,70)&1;let pts;
+        if(fit.length>=2)pts=fit;
+        else if(cp.length>deg&&kn.length===cp.length+deg+1){pts=[];const lo=kn[deg],hi=kn[cp.length],n=Math.max(24,cp.length*8);
+          for(let q=0;q<=n;q++)pts.push(q===n?cp[cp.length-1]:deBoor(deg,kn,cp,lo+(hi-lo)*q/n));}
+        else pts=cp;
+        poly(pts,null,false);}
+      else if(t==='TEXT'){const s=fixT(G(e,1,'')),h=GN(e,40)*sc,a72=GN(e,72),a73=GN(e,73),al=a72||a73;
+        let x=al?GN(e,11):GN(e,10),y=al?GN(e,21):GN(e,20);[x,y]=TP(M,x,y);
+        if(s.trim()&&h>0){const w=textW({text:s,size:h});x-=w*(a72===1||a72===4?.5:a72===2?1:0);y-=h*(a73===2?.5:a73===3?1:0);putText(s,x,y,h);}}
+      else if(t==='MTEXT'){const raw=e.g.filter(x=>x[0]===3).map(x=>x[1]).join('')+String(G(e,1,'')),lines=fixM(raw).split('\n'),h=GN(e,40)*sc,at=GN(e,71,1),
+          lh=h*1.6,n=lines.length,P0=TP(M,GN(e,10),GN(e,20)),hz=(at-1)%3,vt=Math.floor((at-1)/3);
+        lines.forEach((s,q)=>{const y=vt===0?P0[1]-h-q*lh:vt===1?P0[1]+(n-1)*lh/2-h/2-q*lh:P0[1]+(n-1-q)*lh;
+          const w=s.trim()?textW({text:s,size:h}):0;putText(s,P0[0]-w*(hz===1?.5:hz===2?1:0),y,h);});}
+      else if(t==='SOLID'||t==='TRACE'){const q=[0,1,2,3].map(u=>[GN(e,10+u),GN(e,20+u)]);
+        poly(q[3][0]===q[2][0]&&q[3][1]===q[2][1]?[q[0],q[1],q[2]]:[q[0],q[1],q[3],q[2]],null,true);}
+      else if(t==='INSERT'||t==='DIMENSION'){const b=blocks[String(G(e,2,'')).trim()];
+        if(!b){sk[t]=(sk[t]||0)+1;continue;}
+        if(t==='DIMENSION'){emit(b.list,M,d+1);continue;}
+        const ix=GN(e,10),iy=GN(e,20),sx=GN(e,41,1),sy=GN(e,42,1),rot=GN(e,50)*PI/180,co=Math.cos(rot),si=Math.sin(rot),
+          nc=Math.min(50,Math.max(1,GN(e,70,1))),nr=Math.min(50,Math.max(1,GN(e,71,1))),dc=GN(e,44),dr=GN(e,45),N=[sx*co,sx*si,-sy*si,sy*co,0,0];
+        for(let r=0;r<nr;r++)for(let c=0;c<nc;c++){
+          const X=ix+c*dc*co-r*dr*si,Y=iy+c*dc*si+r*dr*co;
+          N[4]=X-(N[0]*b.base[0]+N[2]*b.base[1]);N[5]=Y-(N[1]*b.base[0]+N[3]*b.base[1]);emit(b.list,cm(M,N),d+1);}}
+      else if(!['VERTEX','SEQEND','ENDBLK','POINT','ATTDEF','ATTRIB','VIEWPORT'].includes(t))sk[t]=(sk[t]||0)+1;
+    }};
+  emit(sec.ENTITIES,[k,0,0,k,0,0],0);
+  if(!out.length){inclPaper=true;emit(sec.ENTITIES,[k,0,0,k,0,0],0);}
+  if(!out.length)throw new Error('empty');
+  if(out.length>30000)throw new Error('big');
+  return{shapes:out,skipped:Object.entries(sk).map(([n,v])=>`${n}×${v}`).join('・')};
+}
+let dxfMode='open';
+$('#openDxf').onclick=()=>{dxfMode='open';$('#dxfIn').click();};
+$('#addDxf').onclick=()=>{dxfMode='add';$('#dxfIn').click();};
+$('#dxfIn').onchange=async e=>{const f=e.target.files[0];e.target.value='';$('#fileMenu').open=false;if(!f)return;let r;
+  try{r=parseDXF(await f.arrayBuffer());}
+  catch(err){const m=err&&err.message;toast(m==='binary'?'バイナリ形式のDXFは読めません。ASCII形式で保存し直してください':m==='big'?'図形が多すぎて読めません（3万個まで）':m==='empty'?'読める図形が見つかりませんでした':'DXFを読み取れませんでした');return;}
+  setView('top');saveUndo();
+  const gk='d'+Date.now().toString(36),sk=r.skipped?`（未対応の ${r.skipped} は飛ばしました）`:'';
+  if(dxfMode==='open'){shapes=r.shapes.map(s=>({...s,id:nextId++}));docName=f.name.replace(/\.dxf$/i,'');$('#fname').value=docName;sel=null;commit();fit();
+    toast(`${f.name} の図形${shapes.length}個を開きました${sk}。おかしければ「戻す」で元通り`);return;}
+  const cur=shapes.length?bbox(shapes):null,nb=bbox(r.shapes);let dx=0,dy=0;
+  if(cur&&nb){const gap=Math.max(20,Math.max(cur[2]-cur[0],cur[3]-cur[1])*0.05);dx=cur[2]+gap-nb[0];dy=cur[1]-nb[1];}
+  const list=r.shapes.map(s=>{const c={...s,id:nextId++,grp:gk};if(dx||dy)moveShape(c,s,dx,dy);return c;});
+  shapes.push(...list);sel=list[0].id;commit();fit();
+  toast(`${f.name} の図形${list.length}個を足しました${sk}。おかしければ「戻す」で元通り`);};
 function toDXF(){
   const L=[],f=n=>(Math.round(n*1000)/1000).toString(),add=(...a)=>L.push(...a.map(String));
   add(0,'SECTION',2,'HEADER',9,'$ACADVER',1,'AC1009',9,'$INSUNITS',70,4,0,'ENDSEC',0,'SECTION',2,'ENTITIES');
